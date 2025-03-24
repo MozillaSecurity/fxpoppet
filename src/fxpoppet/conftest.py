@@ -10,7 +10,4 @@ from pytest import fixture
 @fixture
 def tmp_session_adb_check(mocker):
     """Mock adb binary location lookup function"""
-    mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._adb_check",
-        return_value="fake_adb",
-    )
+    mocker.patch("fxpoppet.adb_session.ADBSession._adb_check", return_value="fake_adb")

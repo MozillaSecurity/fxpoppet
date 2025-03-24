@@ -352,7 +352,7 @@ class ADBProcess:
             LOG.error("Unable to process minidump, minidump-stackwalk is required.")
 
         # TODO: fix
-        #with PuppetLogger() as logger:
+        # with PuppetLogger() as logger:
         #    if any(unprocessed.glob("*.dmp")):
         #        process_minidumps(
         #            unprocessed,

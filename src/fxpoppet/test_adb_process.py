@@ -46,8 +46,8 @@ def test_adb_process_03(mocker):
 
 def test_adb_process_04(mocker):
     """test ADBProcess.launch() failed bootstrap setup"""
-    mocker.patch("mobile_puppet.adb_process.Bootstrapper", autospec=True)
-    mocker.patch("mobile_puppet.adb_process.sleep", autospec=True)
+    mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
+    mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.collect_logs.return_value = b""
     fake_session.listdir.return_value = ()
@@ -89,9 +89,7 @@ def test_adb_process_05(mocker):
 )
 def test_adb_process_07(mocker, env):
     """test ADBProcess.launch(), ADBProcess.is_running() and ADBProcess.is_healthy()"""
-    fake_bs = mocker.patch(
-        "mobile_puppet.adb_process.Bootstrapper", autospec=True
-    ).create
+    fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
     fake_session = mocker.Mock(spec_set=ADBSession)
@@ -118,9 +116,7 @@ def test_adb_process_07(mocker, env):
 
 def test_adb_process_08(mocker):
     """test ADBProcess.wait_on_files()"""
-    fake_bs = mocker.patch(
-        "mobile_puppet.adb_process.Bootstrapper", autospec=True
-    ).create
+    fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.shell.return_value = (0, "Status: ok")
@@ -133,10 +129,8 @@ def test_adb_process_08(mocker):
         proc.wait_on_files(["not_running"])
         assert proc.launch("fake.url")
         assert proc.wait_on_files([])
-        mocker.patch("mobile_puppet.adb_process.sleep", autospec=True)
-        mocker.patch(
-            "mobile_puppet.adb_process.time", side_effect=(1, 1, 2)
-        )
+        mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
+        mocker.patch("fxpoppet.adb_process.time", side_effect=(1, 1, 2))
         fake_session.open_files.return_value = (
             (1, "some_file"),
             (1, "/existing/file.txt"),
@@ -149,7 +143,7 @@ def test_adb_process_08(mocker):
 
 def test_adb_process_09(mocker):
     """test ADBProcess.find_crashreports()"""
-    mocker.patch("mobile_puppet.adb_process.Bootstrapper", autospec=True)
+    mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
     with ADBProcess("org.some.app", fake_session) as proc:
         proc.profile = "profile_path"
@@ -166,7 +160,7 @@ def test_adb_process_09(mocker):
 
 def test_adb_process_10(mocker, tmp_path):
     """test ADBProcess.save_logs()"""
-    mocker.patch("mobile_puppet.adb_process.Bootstrapper", autospec=True)
+    mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
     log_path = tmp_path / "src"
     log_path.mkdir()
@@ -186,16 +180,14 @@ def test_adb_process_10(mocker, tmp_path):
 @mark.skip(reason="code broken")
 def test_adb_process_11(mocker, tmp_path):
     """test ADBProcess._process_logs()"""
-    mocker.patch("mobile_puppet.adb_process.Bootstrapper", autospec=True)
+    mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     mocker.patch(
-        "mobile_puppet.adb_process.mkdtemp",
+        "fxpoppet.adb_process.mkdtemp",
         autospec=True,
         return_value=str(tmp_path),
     )
-    mocker.patch("mobile_puppet.adb_process.PuppetLogger", autospec=True)
-    fake_proc_md = mocker.patch(
-        "mobile_puppet.adb_process.MinidumpParser", autospec=True
-    )
+    mocker.patch("fxpoppet.adb_process.PuppetLogger", autospec=True)
+    fake_proc_md = mocker.patch("fxpoppet.adb_process.MinidumpParser", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.collect_logs.return_value = b"fake logcat data"
     fake_session.symbols_path.return_value = "foo"

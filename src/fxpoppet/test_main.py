@@ -31,7 +31,7 @@ def test_parse_02(tmp_path):
 
 def test_main_01(mocker):
     """test main() - create session failed"""
-    session_cls = mocker.patch("mobile_puppet.main.ADBSession", autospec=True)
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.create.return_value = None
     args = mocker.Mock(ip=None, non_root=False, prep=None, port=12345)
     assert main(args) == 1
@@ -39,9 +39,7 @@ def test_main_01(mocker):
 
 def test_main_02(mocker):
     """test main() - airplane mode"""
-    session_cls = mocker.patch(
-        "mobile_puppet.main.ADBSession", autospec=True
-    )
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     args = mocker.Mock(
         airplane_mode=1,
         launch=None,
@@ -71,9 +69,7 @@ def test_main_02(mocker):
 )
 def test_main_03(mocker, tmp_path, pkg, install, result):
     """test main() - install"""
-    session_cls = mocker.patch(
-        "mobile_puppet.main.ADBSession", autospec=True
-    )
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.get_package_name.return_value = pkg
     session_obj = session_cls.create.return_value
     session_obj.install.return_value = install
@@ -106,10 +102,8 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
 )
 def test_main_04(mocker, pkg, result):
     """test main() - launch"""
-    mocker.patch("mobile_puppet.main.ADBProcess", autospec=True)
-    session_cls = mocker.patch(
-        "mobile_puppet.main.ADBSession", autospec=True
-    )
+    mocker.patch("fxpoppet.main.ADBProcess", autospec=True)
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.get_package_name.return_value = pkg
     session_obj = session_cls.create.return_value
     args = mocker.Mock(
@@ -128,9 +122,7 @@ def test_main_04(mocker, pkg, result):
 
 def test_main_05(mocker):
     """test main() - prep"""
-    session_cls = mocker.patch(
-        "mobile_puppet.main.ADBSession", autospec=True
-    )
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     args = mocker.Mock(
         airplane_mode=None,
         launch=None,

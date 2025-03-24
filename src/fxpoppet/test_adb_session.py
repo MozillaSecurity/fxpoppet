@@ -29,7 +29,7 @@ from .adb_session import (
 def test_adb_session_01(mocker, result):
     """test ADBSession._call_adb()"""
     mocker.patch(
-        "mobile_puppet.adb_session.run",
+        "fxpoppet.adb_session.run",
         autospec=True,
         side_effect=result,
     )
@@ -79,9 +79,7 @@ def test_adb_session_01(mocker, result):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_02(mocker, ret, msg, exc, connected):
     """test ADBSession.call()"""
-    mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb", return_value=ret
-    )
+    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", return_value=ret)
     session = ADBSession()
     session.connected = connected
     if exc is None:
@@ -130,7 +128,7 @@ def test_adb_session_05(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_01,
     )
     assert not ADBSession().devices()
@@ -148,7 +146,7 @@ def test_adb_session_05(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_02,
     )
     devices = ADBSession().devices(all_devices=True, any_state=False)
@@ -171,17 +169,15 @@ def test_adb_session_05(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_03,
     )
     session = ADBSession()
-    mocker.patch(
-        "mobile_puppet.adb_session.getenv", return_value="emulator-5558"
-    )
+    mocker.patch("fxpoppet.adb_session.getenv", return_value="emulator-5558")
     devices = session.devices(all_devices=False, any_state=False)
     assert len(devices) == 1
     assert "emulator-5558" in devices
-    mocker.patch("mobile_puppet.adb_session.getenv", return_value=None)
+    mocker.patch("fxpoppet.adb_session.getenv", return_value=None)
     with raises(ADBSessionError):
         session.devices(all_devices=False, any_state=False)
 
@@ -222,7 +218,7 @@ def test_adb_session_06(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession.create(test_ip, test_port)
@@ -298,7 +294,7 @@ def test_adb_session_07(mocker):
             return 0, "restarting adbd as non root"
         raise AssertionError("unexpected command %r" % (cmd,))
 
-    mocker.patch("mobile_puppet.adb_session.ADBSession._call_adb")
+    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
     ADBSession._call_adb = fake_adb_call
     session = ADBSession.create(test_ip, test_port)
     assert session is not None
@@ -355,7 +351,7 @@ def test_adb_session_08(mocker):
                 return 0, "shell"
         raise AssertionError("unexpected command %r" % (cmd,))
 
-    mocker.patch("mobile_puppet.adb_session.ADBSession._call_adb")
+    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
     ADBSession._call_adb = fake_adb_call
     session = ADBSession.create(as_root=False)
     assert session is not None
@@ -372,7 +368,7 @@ def test_adb_session_08(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_09(mocker):
     """test ADBSession.connect() no devices available"""
-    mocker.patch("mobile_puppet.adb_session.sleep")
+    mocker.patch("fxpoppet.adb_session.sleep")
 
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
@@ -389,7 +385,7 @@ def test_adb_session_09(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     assert not ADBSession().connect()
@@ -399,7 +395,7 @@ def test_adb_session_09(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_10(mocker):
     """test ADBSession.connect() device in a bad state"""
-    mocker.patch("mobile_puppet.adb_session.sleep")
+    mocker.patch("fxpoppet.adb_session.sleep")
 
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
@@ -422,7 +418,7 @@ def test_adb_session_10(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     with raises(
@@ -434,6 +430,7 @@ def test_adb_session_10(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_11(mocker):
     """test ADBSession.connect() and ADBSession.disconnect()"""
+
     # pylint: disable=too-many-return-statements,unused-argument
     def fake_adb_call(obj, cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
@@ -485,7 +482,7 @@ def test_adb_session_11(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         autospec=True,
     )
     session = ADBSession("127.0.0.1")
@@ -521,6 +518,7 @@ def test_adb_session_11(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_12(mocker):
     """test ADBSession.connect() with unavailable device"""
+
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
@@ -531,7 +529,7 @@ def test_adb_session_12(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -548,7 +546,7 @@ def test_adb_session_12(mocker):
 def test_adb_session_13(mocker):
     """test ADBSession.all() with unknown command"""
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         return_value=(1, "Android Debug Bridge version 1.0.XX"),
     )
     session = ADBSession("127.0.0.1")
@@ -587,11 +585,11 @@ def test_adb_session_14(tmp_path, mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.get_package_name",
+        "fxpoppet.adb_session.ADBSession.get_package_name",
         side_effect=fake_get_package_name,
     )
     session = ADBSession("127.0.0.1")
@@ -625,6 +623,7 @@ def test_adb_session_14(tmp_path, mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_15(mocker):
     """test ADBSession.uninstall()"""
+
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
@@ -633,7 +632,7 @@ def test_adb_session_15(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -645,6 +644,7 @@ def test_adb_session_15(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_16(mocker):
     """test ADBSession.get_pid()"""
+
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
@@ -659,7 +659,7 @@ def test_adb_session_16(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -673,6 +673,7 @@ def test_adb_session_16(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_17(mocker):
     """test ADBSession.is_installed()"""
+
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
@@ -693,7 +694,7 @@ def test_adb_session_17(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -726,7 +727,7 @@ def test_adb_session_18(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -776,7 +777,7 @@ def test_adb_session_19(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -867,7 +868,7 @@ def test_adb_session_20(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -918,7 +919,7 @@ def test_adb_session_21(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -943,7 +944,7 @@ def test_adb_session_22(tmp_path, mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -969,7 +970,7 @@ def test_adb_session_23(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -990,7 +991,7 @@ def test_adb_session_24(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1017,7 +1018,7 @@ def test_adb_session_25(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1046,7 +1047,7 @@ def test_adb_session_26(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1060,47 +1061,35 @@ def test_adb_session_27(mocker, tmp_path):
     fake_aapt = tmp_path / "android-9" / "aapt"
     fake_aapt.touch()
     # use system aapt
-    mocker.patch(
-        "mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing"
-    )
-    mocker.patch(
-        "mobile_puppet.adb_session.which", return_value=str(fake_aapt)
-    )
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
+    mocker.patch("fxpoppet.adb_session.which", return_value=str(fake_aapt))
     assert ADBSession._aapt_check() == str(fake_aapt)
     # use recommended aapt
-    mocker.patch("mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
     assert ADBSession._aapt_check() == str(fake_aapt)
     # aapt not installed
-    mocker.patch(
-        "mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing"
-    )
-    mocker.patch("mobile_puppet.adb_session.which", return_value=None)
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
+    mocker.patch("fxpoppet.adb_session.which", return_value=None)
     with raises(EnvironmentError, match=r"Please install AAPT"):
         assert ADBSession._aapt_check()
 
 
 def test_adb_session_28(mocker, tmp_path):
     """test ADBSession._adb_check()"""
-    mocker.patch("mobile_puppet.adb_session.sleep")
+    mocker.patch("fxpoppet.adb_session.sleep")
     (tmp_path / "platform-tools").mkdir()
     fake_adb = tmp_path / "platform-tools" / "adb"
     fake_adb.touch()
     # use system adb
-    mocker.patch(
-        "mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing"
-    )
-    mocker.patch(
-        "mobile_puppet.adb_session.which", return_value=str(fake_adb)
-    )
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
+    mocker.patch("fxpoppet.adb_session.which", return_value=str(fake_adb))
     assert ADBSession._adb_check() == str(fake_adb)
     # use recommended adb
-    mocker.patch("mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
     assert ADBSession._adb_check() == str(fake_adb)
     # adb not installed
-    mocker.patch(
-        "mobile_puppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing"
-    )
-    mocker.patch("mobile_puppet.adb_session.which", return_value=None)
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
+    mocker.patch("fxpoppet.adb_session.which", return_value=None)
     with raises(EnvironmentError, match=r"Please install ADB"):
         assert ADBSession._adb_check()
 
@@ -1109,10 +1098,10 @@ def test_adb_session_28(mocker, tmp_path):
 def test_adb_session_29(mocker, tmp_path):
     """test ADBSession.get_package_name()"""
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._aapt_check",
+        "fxpoppet.adb_session.ADBSession._aapt_check",
         return_value=b"fake_aapt",
     )
-    mocker.patch("mobile_puppet.adb_session.check_output", return_value=b"")
+    mocker.patch("fxpoppet.adb_session.check_output", return_value=b"")
     with raises(IOError):
         ADBSession.get_package_name("/fake/path")
     fake_apk = tmp_path / "fake.apk"
@@ -1158,7 +1147,7 @@ def test_adb_session_29(mocker, tmp_path):
         b"native-code: 'x86'"
     )
     mocker.patch(
-        "mobile_puppet.adb_session.check_output",
+        "fxpoppet.adb_session.check_output",
         return_value=output,
     )
     assert ADBSession.get_package_name(str(fake_apk)) == "org.mozilla.fennec_aurora"
@@ -1168,13 +1157,13 @@ def test_adb_session_29(mocker, tmp_path):
 def test_adb_session_30(mocker):
     """test ADBSession.get_enforce()"""
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.call",
+        "fxpoppet.adb_session.ADBSession.call",
         return_value=(0, "Enforcing"),
     )
     session = ADBSession("127.0.0.1")
     assert session.get_enforce()
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.call",
+        "fxpoppet.adb_session.ADBSession.call",
         return_value=(0, "Blah"),
     )
     session = ADBSession("127.0.0.1")
@@ -1185,9 +1174,9 @@ def test_adb_session_30(mocker):
 def test_adb_session_31(mocker):
     """test ADBSession.set_enforce()"""
     # disable when enabled
-    fake_call = mocker.patch("mobile_puppet.adb_session.ADBSession.call")
+    fake_call = mocker.patch("fxpoppet.adb_session.ADBSession.call")
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.get_enforce",
+        "fxpoppet.adb_session.ADBSession.get_enforce",
         return_value=True,
     )
     session = ADBSession("127.0.0.1")
@@ -1196,7 +1185,7 @@ def test_adb_session_31(mocker):
     fake_call.reset_mock()
     # enable when disabled
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.get_enforce",
+        "fxpoppet.adb_session.ADBSession.get_enforce",
         return_value=False,
     )
     session = ADBSession("127.0.0.1")
@@ -1222,7 +1211,7 @@ def test_adb_session_32(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1244,7 +1233,7 @@ def test_adb_session_33(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1278,7 +1267,7 @@ def test_adb_session_34(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1322,7 +1311,7 @@ def test_adb_session_35(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
     session = ADBSession("127.0.0.1")
@@ -1335,8 +1324,8 @@ def test_adb_session_35(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_36(mocker):
     """test ADBSession.wait_for_boot()"""
-    mocker.patch("mobile_puppet.adb_session.ADBSession._call_adb")
-    fake_sleep = mocker.patch("mobile_puppet.adb_session.sleep")
+    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
+    fake_sleep = mocker.patch("fxpoppet.adb_session.sleep")
 
     # test timeout
     # pylint: disable=unused-argument
@@ -1423,10 +1412,10 @@ def test_adb_session_37(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_call,
     )
-    mocker.patch("mobile_puppet.adb_session.ADBSession.connect", spec=True)
+    mocker.patch("fxpoppet.adb_session.ADBSession.connect", spec=True)
     session = ADBSession()
     session.connected = True
     with raises(AssertionError):
@@ -1445,7 +1434,7 @@ def test_adb_session_38(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_01,
     )
     session = ADBSession()
@@ -1462,7 +1451,7 @@ def test_adb_session_38(mocker):
         raise AssertionError("unexpected command %r" % (cmd,))
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession._call_adb",
+        "fxpoppet.adb_session.ADBSession._call_adb",
         side_effect=fake_adb_02,
     )
     session = ADBSession()
@@ -1478,7 +1467,7 @@ def test_adb_session_38(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_40(mocker):
     """test ADBSession.sanitizer_options()"""
-    mocker.patch("mobile_puppet.adb_session.ADBSession.call", autospec=True)
+    mocker.patch("fxpoppet.adb_session.ADBSession.call", autospec=True)
 
     def fake_install_file(src, dst, **_):
         src = Path(src)
@@ -1487,7 +1476,7 @@ def test_adb_session_40(mocker):
         assert dst == "/data/local/tmp/"
 
     mocker.patch(
-        "mobile_puppet.adb_session.ADBSession.install_file",
+        "fxpoppet.adb_session.ADBSession.install_file",
         side_effect=fake_install_file,
     )
     session = ADBSession()
@@ -1497,8 +1486,8 @@ def test_adb_session_40(mocker):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_41(mocker):
     """test ADBSession.install_file()"""
-    mocker.patch("mobile_puppet.adb_session.ADBSession.push", autospec=True)
-    mocker.patch("mobile_puppet.adb_session.ADBSession.shell", autospec=True)
+    mocker.patch("fxpoppet.adb_session.ADBSession.push", autospec=True)
+    mocker.patch("fxpoppet.adb_session.ADBSession.shell", autospec=True)
     session = ADBSession()
     session.install_file("a/b", "/sdcard/", mode="777", context="foo")
 
@@ -1522,6 +1511,6 @@ def test_adb_get_android_sdk_01(mocker, tmp_path, env_var, os_name):
             return str(tmp_path)
         return None
 
-    mocker.patch("mobile_puppet.adb_session.getenv", side_effect=_getenv)
-    mocker.patch("mobile_puppet.adb_session.system", return_value=os_name)
+    mocker.patch("fxpoppet.adb_session.getenv", side_effect=_getenv)
+    mocker.patch("fxpoppet.adb_session.system", return_value=os_name)
     assert _get_android_sdk()
