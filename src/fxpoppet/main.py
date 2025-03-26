@@ -71,7 +71,7 @@ def parse_args(argv=None):
         parser.error("No options selected")
     for apk in (args.install, args.launch, args.prep):
         if apk is not None and not isfile(apk):
-            parser.error("Invalid APK %r" % (apk,))
+            parser.error(f"Invalid APK {apk!r}")
     args.log_level = log_level_map[args.log_level]
     return args
 

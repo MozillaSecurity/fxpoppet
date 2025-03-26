@@ -1,4 +1,3 @@
-# coding=utf-8
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -64,7 +63,7 @@ class ADBProcess:
     def __init__(self, package_name, session, use_profile=None):
         assert isinstance(session, ADBSession), "Expecting ADBSession"
         if not session.is_installed(package_name):
-            raise ADBSessionError("Package %r is not installed" % (package_name,))
+            raise ADBSessionError(f"Package {package_name!r} is not installed")
         self._launches = 0  # number of successful browser launches
         self._package = package_name  # package to use as target process
         self._pid = None  # pid of current target process
@@ -72,7 +71,7 @@ class ADBProcess:
         self._session = session  # ADB session with device
         # Note: geckview_example fails to read a profile from /sdcard/ atm
         # self._working_path = "/sdcard/ADBProc_%08X" % (getrandbits(32),)
-        self._working_path = "/data/local/tmp/ADBProc_%08X" % (getrandbits(32),)
+        self._working_path = f"/data/local/tmp/ADBProc_{getrandbits(32):08X}"
         # self._sanitizer_logs = "%s/sanitizer_logs" % (self._working_path,)
         self.logs = None
         self.profile = None  # profile path on device
@@ -123,7 +122,7 @@ class ADBProcess:
                 # remove remote working path
                 self._session.shell(["rm", "-rf", self._working_path])
                 # remove remote config yaml
-                cfg_file = "/data/local/tmp/%s-geckoview-config.yaml" % (self._package,)
+                cfg_file = f"/data/local/tmp/{self._package}-geckoview-config.yaml"
                 self._session.shell(["rm", "-rf", cfg_file])
                 # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
                 if "log_asan.txt" in os.listdir(self.logs):
@@ -137,7 +136,7 @@ class ADBProcess:
             self.reason = Reason.CLOSED
 
     def find_crashreports(self):
-        reports = list()
+        reports = []
         # look for logs from sanitizers
         # for fname in self._session.listdir(self._sanitizer_logs):
         #    reports.append(os.path.join(self._sanitizer_logs, fname))
@@ -148,8 +147,8 @@ class ADBProcess:
             try:
                 for fname in self._session.listdir(md_path):
                     if ".dmp" in fname or ".extra" in fname:
-                        reports.append(os.path.join(md_path, fname))
-            except IOError:
+                        reports.append(os.path.join(md_path, fname))  # noqa: PERF401
+            except FileNotFoundError:
                 LOG.debug("%s does not exist", md_path)
 
         return reports
@@ -179,20 +178,20 @@ class ADBProcess:
         self.reason = None
 
         if ".fenix" in self._package:
-            app = "%s/org.mozilla.fenix.IntentReceiverActivity" % (self._package,)
+            app = f"{self._package}/org.mozilla.fenix.IntentReceiverActivity"
         elif ".geckoview_example" in self._package:
-            app = "%s/org.mozilla.geckoview_example.GeckoViewActivity" % (self._package)
+            app = f"{self._package}/org.mozilla.geckoview_example.GeckoViewActivity"
         else:
-            raise ADBLaunchError("Unsupported package %r" % (self._package,))
+            raise ADBLaunchError(f"Unsupported package {self._package!r}")
 
         # check app is not previously running
         if self._session.get_pid(self._package) is not None:
-            raise ADBLaunchError("%r is already running" % (self._package,))
+            raise ADBLaunchError(f"{self._package!r} is already running")
 
         # load prefs from prefs.js
-        prefs = self.prefs_to_dict(prefs_js) if prefs_js else dict()
+        prefs = self.prefs_to_dict(prefs_js) if prefs_js else {}
         if prefs is None:
-            raise ADBLaunchError("Invalid prefs.js file (%s)" % (prefs_js,))
+            raise ADBLaunchError(f"Invalid prefs.js file ({prefs_js})")
 
         # setup bootstrapper and reverse port
         # reverse does fail occasionally so use a retry loop
@@ -223,7 +222,7 @@ class ADBProcess:
             # create location to store sanitizer logs
             # self._session.shell(["mkdir", "-p", self._sanitizer_logs])
             # create empty profile
-            self.profile = "%s/gv_profile_%08X" % (self._working_path, getrandbits(32))
+            self.profile = f"{self._working_path}/gv_profile_{getrandbits(32):08X}"
             self._session.shell(["mkdir", "-p", self.profile])
             # add environment variables
             env_mod = dict(env_mod or {})
@@ -242,7 +241,7 @@ class ADBProcess:
             # build *-geckoview-config.yaml
             # https://firefox-source-docs.mozilla.org/mobile/android/geckoview/...
             # consumer/automation.html#configuration-file-format
-            cfg_file = "%s-geckoview-config.yaml" % (self._package,)
+            cfg_file = f"{self._package}-geckoview-config.yaml"
             with NamedTemporaryFile("w+t") as cfp:
                 cfp.write(
                     safe_dump(
@@ -254,8 +253,8 @@ class ADBProcess:
                     )
                 )
                 cfp.flush()
-                if not self._session.push(cfp.name, "/data/local/tmp/%s" % (cfg_file,)):
-                    raise ADBLaunchError("Could not upload %r" % (cfg_file,))
+                if not self._session.push(cfp.name, f"/data/local/tmp/{cfg_file}"):
+                    raise ADBLaunchError(f"Could not upload {cfg_file!r}")
             cmd = [
                 "am",
                 "start",
@@ -268,7 +267,7 @@ class ADBProcess:
                 bootstrapper.location,
             ]
             if "Status: ok" not in self._session.shell(cmd, timeout=launch_timeout)[1]:
-                raise ADBLaunchError("Could not launch %r" % (self._package,))
+                raise ADBLaunchError(f"Could not launch {self._package!r}")
             self._pid = self._session.get_pid(self._package)
             bootstrapper.wait(self.is_healthy, url=url)
         finally:
@@ -293,8 +292,8 @@ class ADBProcess:
     @staticmethod
     def prefs_to_dict(prefs_file):
         pattern = re.compile(r"user_pref\((?P<name>.+?),\s*(?P<value>.+)\);")
-        out = dict()
-        with open(prefs_file, "r") as in_fp:
+        out = {}
+        with open(prefs_file, encoding="utf-8") as in_fp:
             for line in in_fp:
                 pref = pattern.match(line)
                 if not pref:
@@ -407,9 +406,11 @@ class ADBProcess:
                     asan_tid = m_id.group("tid")
         LOG.debug("%d interesting pid(s) found in logcat output", len(filter_pids))
         # filter logs
-        with open(logcat, "rb") as lc_fp, open(err_log, "wb") as e_fp, open(
-            out_log, "wb"
-        ) as o_fp:
+        with (
+            open(logcat, "rb") as lc_fp,
+            open(err_log, "wb") as e_fp,
+            open(out_log, "wb") as o_fp,
+        ):
             for line in lc_fp:
                 # quick check if pid is in the line
                 if not any(pid in line for pid in filter_pids):
@@ -476,10 +477,10 @@ class ADBProcess:
         assert timeout >= 0
         assert poll_rate <= timeout
         wait_end = time() + timeout
-        wait_files = set(self._session.realpath(x) for x in wait_files)
+        wait_files = frozenset(self._session.realpath(x) for x in wait_files)
 
         while wait_files:
-            open_files = set(x for _, x in self._session.open_files())
+            open_files = frozenset(x for _, x in self._session.open_files())
             # check if any open files are in the wait file list
             if not wait_files.intersection(open_files):
                 break

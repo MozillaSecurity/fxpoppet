@@ -39,9 +39,11 @@ def test_adb_process_03(mocker):
     """test ADBProcess.launch() unsupported app"""
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.collect_logs.return_value = b""
-    with ADBProcess("org.some.app", fake_session) as proc:
-        with raises(ADBLaunchError, match="Unsupported package 'org.some.app'"):
-            proc.launch("fake.url")
+    with (
+        ADBProcess("org.some.app", fake_session) as proc,
+        raises(ADBLaunchError, match="Unsupported package 'org.some.app'"),
+    ):
+        proc.launch("fake.url")
 
 
 def test_adb_process_04(mocker):
@@ -53,9 +55,11 @@ def test_adb_process_04(mocker):
     fake_session.listdir.return_value = ()
     fake_session.get_pid.return_value = None
     fake_session.reverse.return_value = False
-    with ADBProcess("org.mozilla.fenix", fake_session) as proc:
-        with raises(ADBLaunchError, match="Could not reverse port"):
-            proc.launch("fake.url")
+    with (
+        ADBProcess("org.mozilla.fenix", fake_session) as proc,
+        raises(ADBLaunchError, match="Could not reverse port"),
+    ):
+        proc.launch("fake.url")
 
 
 def test_adb_process_05(mocker):
@@ -154,7 +158,7 @@ def test_adb_process_09(mocker):
         fake_session.listdir.side_effect = (["somefile.txt", "test.dmp"],)
         assert any(x.endswith("test.dmp") for x in proc.find_crashreports())
         # contains missing path
-        fake_session.listdir.side_effect = (IOError("test"),)
+        fake_session.listdir.side_effect = (FileNotFoundError("test"),)
         assert not proc.find_crashreports()
 
 
@@ -255,8 +259,8 @@ def test_adb_process_12(tmp_path):
 @mark.parametrize(
     "input_data, result",
     [
-        ("", dict()),
-        ('junk\n#user_pref("a.b", 0);\n', dict()),
+        ("", {}),
+        ('junk\n#user_pref("a.b", 0);\n', {}),
         ('user_pref("a.b.c", false);\n', {"a.b.c": False}),
         ("user_pref('a.b.c', 0);", {"a.b.c": 0}),
         ("user_pref(\"a.b.c\", 'test');", {"a.b.c": "test"}),

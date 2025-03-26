@@ -1,4 +1,3 @@
-# coding=utf-8
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -76,14 +75,14 @@ class ADBSession:
         self._port = None  # ADB listening port
         self._root = False
         self.connected = False
-        self.symbols = dict()
+        self.symbols = {}
 
         if ip_addr is not None:
             LOG.debug("creating IP based session")
             try:
                 if ip_addr != "localhost":
                     socket.inet_aton(ip_addr)
-            except (socket.error, TypeError):
+            except (OSError, TypeError):
                 raise ValueError("Invalid IP Address") from None
             self._ip_addr = ip_addr
             if not isinstance(port, int) or not 0x10000 > port > 1024:
@@ -107,7 +106,7 @@ class ADBSession:
             return str(aapt_bin)
         aapt_bin = which("aapt")
         if aapt_bin is None:
-            raise EnvironmentError("Please install AAPT")
+            raise OSError("Please install AAPT")
         aapt_bin = Path(aapt_bin)
         # TODO: update this to check aapt version
         LOG.warning("Using aapt_bin from '%s'", aapt_bin)
@@ -130,7 +129,7 @@ class ADBSession:
             return str(adb_bin)
         adb_bin = which("adb")
         if adb_bin is None:
-            raise EnvironmentError("Please install ADB")
+            raise OSError("Please install ADB")
         adb_bin = Path(adb_bin)
         # TODO: update this to check adb version
         LOG.warning("Using adb from '%s'", adb_bin)
@@ -155,6 +154,7 @@ class ADBSession:
         try:
             result = run(
                 cmd,
+                check=False,
                 encoding="utf-8",
                 errors="replace",
                 stderr=STDOUT,
@@ -190,7 +190,7 @@ class ADBSession:
             try:
                 proc_id, ppid, memory, name = line.split()
                 yield DeviceProcessInfo(int(memory), name, int(proc_id), int(ppid))
-            except ValueError:
+            except ValueError:  # noqa: PERF203
                 LOG.debug("failed to parse ps line %r", line)
 
     @property
@@ -245,7 +245,7 @@ class ADBSession:
             ADB call and the second is a string containing stderr and stdout.
         """
         assert cmd
-        cmd = [self._adb_bin] + cmd
+        cmd = [self._adb_bin, *cmd]
         LOG.debug("call %r (%r)", " ".join(cmd[1:]), timeout)
         if not self.connected and cmd[1] not in ("connect", "devices", "disconnect"):
             raise ADBCommunicationError("ADB session is not connected!")
@@ -256,7 +256,7 @@ class ADBSession:
             )
         if ret_code != 0:
             if output.startswith("Android Debug Bridge version"):
-                raise ADBCommandError("Invalid ADB command '%s'" % (" ".join(cmd[1:]),))
+                raise ADBCommandError(f"Invalid ADB command '{' '.join(cmd[1:])}'")
             if output.startswith("adb: usage:"):
                 raise ADBCommandError(output)
             if device_required and (
@@ -296,7 +296,7 @@ class ADBSession:
             return ""
         cmd = ["logcat", "-d", "*:I"]
         if pid is not None:
-            cmd += ["--pid=%d" % (pid,)]
+            cmd.append(f"--pid={pid}")
         return self.call(cmd, timeout=30)[1].encode("utf-8", "ignore")
 
     def connect(self, as_root=True, boot_timeout=300, max_attempts=60, retry_delay=1):
@@ -339,7 +339,7 @@ class ADBSession:
             # verify we are connected
             if not self.wait_for_boot(timeout=boot_timeout):
                 raise ADBCommunicationError(
-                    "Timeout (%ds) waiting for device to boot" % (boot_timeout,)
+                    f"Timeout ({boot_timeout}s) waiting for device to boot"
                 )
             ret_code, user = self.call(
                 ["shell", "-T", "-n", "whoami"], device_required=False, timeout=30
@@ -360,20 +360,19 @@ class ADBSession:
             if self._cpu_arch is None:
                 self._cpu_arch = self.shell(["getprop", "ro.product.cpu.abi"])[1]
             # check SELinux mode
-            if self._root:
-                if self.get_enforce():
-                    if set_enforce_called:
-                        raise ADBSessionError("set_enforce(0) failed!")
-                    # set SELinux to run in permissive mode
-                    self.set_enforce(0)
-                    self.shell(["stop"])
-                    self.shell(["start"])
-                    # put the device in a known state
-                    self.call(["reconnect"], timeout=30)
-                    self.connected = False
-                    set_enforce_called = True
-                    attempt -= 1
-                    continue
+            if self._root and self.get_enforce():
+                if set_enforce_called:
+                    raise ADBSessionError("set_enforce(0) failed!")
+                # set SELinux to run in permissive mode
+                self.set_enforce(0)
+                self.shell(["stop"])
+                self.shell(["start"])
+                # put the device in a known state
+                self.call(["reconnect"], timeout=30)
+                self.connected = False
+                set_enforce_called = True
+                attempt -= 1
+                continue
             if not as_root or self._root:
                 LOG.debug(
                     "connected device running Android %s (%s)",
@@ -507,7 +506,7 @@ class ADBSession:
             str: String containing the package name otherwise None.
         """
         if not Path(apk_path).is_file():
-            raise IOError("APK path must point to a file")
+            raise FileNotFoundError("APK path must point to a file")
         aapt = cls._aapt_check()
         apk_info = check_output((aapt, "dump", "badging", apk_path))
         for line in apk_info.splitlines():
@@ -540,13 +539,13 @@ class ADBSession:
         """
         LOG.debug("installing %r", apk_path)
         if not Path(apk_path).is_file():
-            raise IOError("APK does not exist %r" % (apk_path,))
+            raise FileNotFoundError(f"APK does not exist {apk_path!r}")
         # lookup package name
         pkg_name = self.get_package_name(apk_path)
         if pkg_name is None:
             raise ADBSessionError("Could not find APK package name")
         if self.call(["install", "-g", "-r", apk_path], timeout=180)[0] != 0:
-            raise ADBSessionError("Failed to install %r" % (apk_path,))
+            raise ADBSessionError(f"Failed to install {apk_path!r}")
         # set permissions
         self.shell(
             ["pm", "grant", pkg_name, "android.permission.READ_EXTERNAL_STORAGE"]
@@ -599,7 +598,7 @@ class ADBSession:
         """
         ret_val, output = self.shell(["ls", "-A", path])
         if ret_val != 0:
-            raise IOError("%r does not exist" % (path,))
+            raise FileNotFoundError(f"{path!r} does not exist")
         return output.splitlines()
 
     def open_files(self, pid=None, children=False, files=None):
@@ -622,7 +621,7 @@ class ADBSession:
             pids = [str(pid)]
             if children:
                 pids.extend(str(x.pid) for x in self._get_procs(pid_children=pid))
-            cmd += ["-p", ",".join(pids)]
+            cmd.extend(("-p", ",".join(pids)))
         else:
             assert not children, "children requires pid"
             pids = None
@@ -694,7 +693,7 @@ class ADBSession:
         """
         LOG.debug("push(%r, %r)", src, dst)
         if not Path(src).exists():
-            raise IOError("%r does not exist" % (src,))
+            raise FileNotFoundError(f"{src!r} does not exist")
         return self.call(["push", src, dst], timeout=180)[0] == 0
 
     def realpath(self, path):
@@ -708,7 +707,7 @@ class ADBSession:
         """
         ret_val, output = self.shell(["realpath", path])
         if ret_val != 0:
-            raise IOError("%r does not exist" % (path,))
+            raise FileNotFoundError(f"{path!r} does not exist")
         return output
 
     def reboot_device(self, boot_timeout=300, max_attempts=60, retry_delay=1):
@@ -759,7 +758,7 @@ class ADBSession:
         """
         assert 1024 < local < 0x10000
         assert 1024 < remote < 0x10000
-        cmd = ["reverse", "tcp:%d" % (remote,), "tcp:%d" % (local,)]
+        cmd = ["reverse", f"tcp:{remote}", f"tcp:{local}"]
         return self.call(cmd, timeout=10)[0] == 0
 
     def reverse_remove(self, remote=None):
@@ -775,7 +774,7 @@ class ADBSession:
         if remote is not None:
             assert 1024 < remote < 0x10000
             cmd.append("--remove")
-            cmd.append("tcp:%d" % (remote,))
+            cmd.append(f"tcp:{remote}")
         else:
             cmd.append("--remove-all")
         return self.call(cmd, timeout=10)[0] == 0
@@ -792,11 +791,11 @@ class ADBSession:
         """
         prefix = prefix.lower()
         assert prefix == "asan", "only ASan is supported atm"
-        self.shell(["rm", "-f", "%s.options.gecko" % (prefix,)])
+        self.shell(["rm", "-f", f"{prefix}.options.gecko"])
         # TODO: use common temp dir
         with TemporaryDirectory(prefix="sanopts_") as working_path:
-            optfile = Path(working_path) / ("%s.options.gecko" % (prefix,))
-            optfile.write_text(":".join("%s=%s" % x for x in options.items()))
+            optfile = Path(working_path) / (f"{prefix}.options.gecko")
+            optfile.write_text(":".join(f"{x[0]}={x[1]}" for x in options.items()))
             # TODO: use push() instead?
             self.install_file(str(optfile), "/data/local/tmp/", mode="666")
 
@@ -826,7 +825,7 @@ class ADBSession:
             ADB call and the second is a string containing stderr and stdout.
         """
         assert cmd
-        return self.call(["shell", "-T", "-n"] + cmd, timeout=timeout)
+        return self.call(["shell", "-T", "-n", *cmd], timeout=timeout)
 
     def symbols_path(self, package_name):
         """Lookup path containing symbols for a specified package.
