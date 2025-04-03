@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from logging import DEBUG, ERROR, INFO, WARNING, basicConfig, getLogger
 from os import getenv
 from os.path import dirname, isfile
@@ -16,11 +16,11 @@ __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
 
 
-def configure_logging(log_level):
+def configure_logging(log_level: int) -> None:
     """Configure log output level and formatting.
 
     Args:
-        log_level (int): Set log level.
+        log_level: Set log level.
 
     Returns:
         None
@@ -37,7 +37,8 @@ def configure_logging(log_level):
     basicConfig(format=log_fmt, datefmt=date_fmt, level=log_level)
 
 
-def parse_args(argv=None):
+def parse_args(argv: list[str] | None = None) -> Namespace:
+    """Argument parsing"""
     log_level_map = {"ERROR": ERROR, "WARN": WARNING, "INFO": INFO, "DEBUG": DEBUG}
 
     parser = ArgumentParser(description="ADB Device Wrapper")
@@ -76,7 +77,8 @@ def parse_args(argv=None):
     return args
 
 
-def main(args):  # pylint: disable=missing-docstring
+def main(args: Namespace) -> int:
+    """Main function"""
     configure_logging(args.log_level)
     LOG.info("Connecting to device...")
     session = ADBSession.create(args.ip, args.port, as_root=not args.non_root)

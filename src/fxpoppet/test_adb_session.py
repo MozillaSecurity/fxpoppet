@@ -1430,10 +1430,10 @@ def test_adb_session_41(mocker):
 def test_adb_get_android_sdk_01(mocker, tmp_path, env_var, os_name):
     """test ADBSession._get_android_sdk()"""
 
-    def _getenv(in_var):
+    def _getenv(in_var, default=None):
         if in_var == env_var:
             return str(tmp_path)
-        return None
+        return default
 
     mocker.patch("fxpoppet.adb_session.getenv", side_effect=_getenv)
     mocker.patch("fxpoppet.adb_session.system", return_value=os_name)

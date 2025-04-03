@@ -1,6 +1,9 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+from __future__ import annotations
+
 import os
 import re
 from enum import Enum, auto, unique
@@ -10,12 +13,16 @@ from random import getrandbits
 from shutil import copy, rmtree
 from tempfile import NamedTemporaryFile, mkdtemp
 from time import sleep, time
+from typing import TYPE_CHECKING
 
 from ffpuppet.bootstrapper import Bootstrapper
 from ffpuppet.minidump_parser import MinidumpParser
 from yaml import safe_dump
 
 from .adb_session import ADBSession, ADBSessionError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
 
 LOG = getLogger("adb_process")
 
@@ -60,30 +67,33 @@ class ADBProcess:
         "reason",
     )
 
-    def __init__(self, package_name, session, use_profile=None):
+    def __init__(
+        self, package_name: str, session: ADBSession, use_profile: str | None = None
+    ) -> None:
         assert isinstance(session, ADBSession), "Expecting ADBSession"
         if not session.is_installed(package_name):
             raise ADBSessionError(f"Package {package_name!r} is not installed")
         self._launches = 0  # number of successful browser launches
         self._package = package_name  # package to use as target process
-        self._pid = None  # pid of current target process
+        self._pid: int | None = None  # pid of current target process
         self._profile_template = use_profile  # profile that is used as a template
         self._session = session  # ADB session with device
         # Note: geckview_example fails to read a profile from /sdcard/ atm
         # self._working_path = "/sdcard/ADBProc_%08X" % (getrandbits(32),)
         self._working_path = f"/data/local/tmp/ADBProc_{getrandbits(32):08X}"
         # self._sanitizer_logs = "%s/sanitizer_logs" % (self._working_path,)
-        self.logs = None
-        self.profile = None  # profile path on device
-        self.reason = Reason.CLOSED
+        self.logs: str | None = None
+        # profile path on device
+        self.profile: str | None = None
+        self.reason: Reason | None = Reason.CLOSED
 
-    def __enter__(self):
+    def __enter__(self) -> ADBProcess:
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: object) -> None:
         self.cleanup()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._launches < 0:
             LOG.debug("clean_up() call ignored")
             return
@@ -93,14 +103,14 @@ class ADBProcess:
         # negative 'self._launches' indicates clean_up() has been called
         self._launches = -1
 
-    def clone_log(self):
+    def clone_log(self) -> str:
         # TODO: dump logs for all browser processes
         if self._session is None:
             # TODO: better error?
             return "ADB session does not exist!"
         return self._session.collect_logs(pid=self._pid)
 
-    def close(self):
+    def close(self) -> None:
         assert self._launches > -1, "clean_up() has been called"
         if self.reason is not None:
             LOG.debug("already closed!")
@@ -135,8 +145,8 @@ class ADBProcess:
         if self.reason is None:
             self.reason = Reason.CLOSED
 
-    def find_crashreports(self):
-        reports = []
+    def find_crashreports(self) -> list[str]:
+        reports: list[str] = []
         # look for logs from sanitizers
         # for fname in self._session.listdir(self._sanitizer_logs):
         #    reports.append(os.path.join(self._sanitizer_logs, fname))
@@ -153,19 +163,25 @@ class ADBProcess:
 
         return reports
 
-    def is_healthy(self):
+    def is_healthy(self) -> bool:
         if not self.is_running():
             return False
         return not self.find_crashreports()
 
-    def is_running(self):
+    def is_running(self) -> bool:
         assert self._session, "Device not connected"
         assert self._package, "Package not specified"
         if self._pid is None or self.reason is not None:
             return False
         return self._session.process_exists(self._pid)
 
-    def launch(self, url, env_mod=None, launch_timeout=60, prefs_js=None):
+    def launch(
+        self,
+        url: str,
+        env_mod: Mapping[str, str] | None = None,
+        launch_timeout: int = 60,
+        prefs_js: str | None = None,
+    ) -> bool:
         LOG.debug("launching %r", url)
         assert self._launches > -1, "clean_up() has been called"
         assert self._session, "Device not connected"
@@ -278,21 +294,22 @@ class ADBProcess:
         return self._pid is not None
 
     @property
-    def launches(self):
-        """
-        Get the number of successful launches
+    def launches(self) -> int:
+        """Get the number of successful launches
 
-        @rtype: int
-        @return: successful launch count
-        """
+        Args:
+            None
 
+        Return:
+            Number of successful launches
+        """
         assert self._launches > -1, "clean_up() has been called"
         return self._launches
 
     @staticmethod
-    def prefs_to_dict(prefs_file):
+    def prefs_to_dict(prefs_file: str) -> dict[str, bool | int | str] | None:
         pattern = re.compile(r"user_pref\((?P<name>.+?),\s*(?P<value>.+)\);")
-        out = {}
+        out: dict[str, bool | int | str] = {}
         with open(prefs_file, encoding="utf-8") as in_fp:
             for line in in_fp:
                 pref = pattern.match(line)
@@ -311,7 +328,7 @@ class ADBProcess:
                     LOG.error("Pref name is missing")
                     return None
                 # parse value
-                value = pref.group("value")
+                value: str = pref.group("value")
                 if value in ("false", "true"):
                     out[name] = value == "true"
                 elif value[0] == "'" == value[-1]:
@@ -326,14 +343,15 @@ class ADBProcess:
                         return None
         return out
 
-    def _process_logs(self, crash_reports):
+    def _process_logs(self, crash_reports: list[str]) -> None:
         assert self.logs is None
+        assert self.profile is not None
         # TODO: use a common tmp dir
         self.logs = mkdtemp(prefix="mp-logs_")
         unprocessed = Path(self.logs) / "unprocessed"
         unprocessed.mkdir(exist_ok=True)
 
-        with (Path(self.logs) / "log_logcat.txt").open("wb") as log_fp:
+        with (Path(self.logs) / "log_logcat.txt").open("w") as log_fp:
             # TODO: should this filter by pid or not?
             log_fp.write(self._session.collect_logs())
             # log_fp.write(self._session.collect_logs(pid=self._pid))
@@ -346,7 +364,7 @@ class ADBProcess:
             self._session.pull(fname, str(unprocessed))
 
         # TODO: fix
-        dmp_files = MinidumpParser.dmp_files(self.profile.path / "minidumps")
+        dmp_files = MinidumpParser.dmp_files(Path(self.profile) / "minidumps")
         if dmp_files and not MinidumpParser.mdsw_available():
             LOG.error("Unable to process minidump, minidump-stackwalk is required.")
 
@@ -361,13 +379,13 @@ class ADBProcess:
         #    logger.close()
         #    logger.save_logs(self.logs)
 
-    def _remove_logs(self):
+    def _remove_logs(self) -> None:
         if self.logs is not None and os.path.isdir(self.logs):
             rmtree(self.logs)
             self.logs = None
 
     @staticmethod
-    def _split_logcat(log_path, package_name):
+    def _split_logcat(log_path: str, package_name: bytes | str) -> None:
         # Roughly split out stderr and stdout from logcat
         # This is to support FuzzManager. The original logcat output is also
         # included in the report so nothing is lost.
@@ -454,7 +472,11 @@ class ADBProcess:
                     line = re.sub(rb".+?\s[ADEIVW]\s+", b"", line)
                     o_fp.write(line.split(b": ", 1)[-1])
 
-    def save_logs(self, log_path, meta=False):  # pylint: disable=unused-argument
+    def save_logs(
+        self,
+        log_path: str,
+        meta: bool = False,  # pylint: disable=unused-argument
+    ) -> None:
         assert self.reason is not None, "Call close() first!"
         assert self._launches > -1, "clean_up() has been called"
         if self.logs is None:
@@ -472,7 +494,9 @@ class ADBProcess:
                 continue
             copy(full_name, log_path)
 
-    def wait_on_files(self, wait_files, poll_rate=0.5, timeout=60):
+    def wait_on_files(
+        self, wait_files: Iterable[str], poll_rate: float = 0.5, timeout: int = 60
+    ) -> bool:
         assert poll_rate >= 0
         assert timeout >= 0
         assert poll_rate <= timeout
@@ -493,12 +517,12 @@ class ADBProcess:
             sleep(poll_rate)
         return True
 
-    def _terminate(self):
+    def _terminate(self) -> None:
         assert self._package is not None
         assert self._session, "Device not connected"
         # TODO: is this the best way???
         self._session.shell(["am", "force-stop", self._package])
 
-    def wait(self):
+    def wait(self) -> None:
         while self.is_running():
             sleep(0.25)
