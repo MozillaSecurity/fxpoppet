@@ -69,7 +69,7 @@ class ADBProcess:
     def __init__(
         self, package_name: str, session: ADBSession, use_profile: str | None = None
     ) -> None:
-        assert isinstance(session, ADBSession), "Expecting ADBSession"
+        assert package_name
         if not session.is_installed(package_name):
             raise ADBSessionError(f"Package {package_name!r} is not installed")
         # number of successful browser launches
@@ -109,9 +109,6 @@ class ADBProcess:
 
     def clone_log(self) -> str:
         # TODO: dump logs for all browser processes
-        if self._session is None:
-            # TODO: better error?
-            return "ADB session does not exist!"
         return self._session.collect_logs(pid=self._pid)
 
     def close(self) -> None:
@@ -120,28 +117,26 @@ class ADBProcess:
             LOG.debug("already closed!")
             return
         try:
-            if self._session is not None:
-                crash_reports = self.find_crashreports()
-                # set reason code
-                if crash_reports:
-                    self.reason = Reason.ALERT
-                    self.wait_on_files(crash_reports)
-                elif self.is_running():
-                    self.reason = Reason.CLOSED
-                else:
-                    self.reason = Reason.EXITED
-                self._terminate()
-                self.wait()
-                self._process_logs(crash_reports)
-                # remove remote working path
-                self._session.shell(["rm", "-rf", str(self._working_path)])
-                # remove remote config yaml
-                cfg_file = str(DEVICE_TMP / f"{self._package}-geckoview-config.yaml")
-                self._session.shell(["rm", "-rf", cfg_file])
-                # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
-                if self.logs and (self.logs / "log_asan.txt").is_file():
-                    self.reason = Reason.ALERT
-
+            crash_reports = self.find_crashreports()
+            # set reason code
+            if crash_reports:
+                self.reason = Reason.ALERT
+                self.wait_on_files(crash_reports)
+            elif self.is_running():
+                self.reason = Reason.CLOSED
+            else:
+                self.reason = Reason.EXITED
+            self._terminate()
+            self.wait()
+            self._process_logs(crash_reports)
+            # remove remote working path
+            self._session.shell(["rm", "-rf", str(self._working_path)])
+            # remove remote config yaml
+            cfg_file = str(DEVICE_TMP / f"{self._package}-geckoview-config.yaml")
+            self._session.shell(["rm", "-rf", cfg_file])
+            # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
+            if self.logs and (self.logs / "log_asan.txt").is_file():
+                self.reason = Reason.ALERT
         except ADBSessionError:
             LOG.warning("No device detected while closing process")
         self._pid = None
@@ -173,8 +168,6 @@ class ADBProcess:
         return not self.find_crashreports()
 
     def is_running(self) -> bool:
-        assert self._session, "Device not connected"
-        assert self._package, "Package not specified"
         if self._pid is None or self.reason is not None:
             return False
         return self._session.process_exists(self._pid)
@@ -188,8 +181,6 @@ class ADBProcess:
     ) -> bool:
         LOG.debug("launching %r", url)
         assert self._launches > -1, "clean_up() has been called"
-        assert self._session, "Device not connected"
-        assert self._package, "Package not specified"
         assert self._pid is None, "Process is already running"
         assert self.reason is not None, "Process is already running"
 
@@ -528,8 +519,6 @@ class ADBProcess:
         return True
 
     def _terminate(self) -> None:
-        assert self._package is not None
-        assert self._session, "Device not connected"
         # TODO: is this the best way???
         self._session.shell(["am", "force-stop", self._package])
 
