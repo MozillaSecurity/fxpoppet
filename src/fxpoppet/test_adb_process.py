@@ -261,6 +261,7 @@ def test_adb_process_12(tmp_path):
     "input_data, result",
     [
         ("", {}),
+        ("//comment\n", {}),
         ('junk\n#user_pref("a.b", 0);\n', {}),
         ('user_pref("a.b.c", false);\n', {"a.b.c": False}),
         ("user_pref('a.b.c', 0);", {"a.b.c": 0}),
@@ -269,6 +270,12 @@ def test_adb_process_12(tmp_path):
         ('user_pref("a.b", 1);\nuser_pref("a.c", true);', {"a.b": 1, "a.c": True}),
         ('user_pref("a.b", 1);\n#\nuser_pref("a.c", 1);', {"a.b": 1, "a.c": 1}),
         ("user_pref('a.b.c', '1,2,3,');", {"a.b.c": "1,2,3,"}),
+        (
+            '\n\nuser_pref("a.b", "1");\n//foo\n\nuser_pref("c.d", "2");\n\n',
+            {"a.b": "1", "c.d": "2"},
+        ),
+        # empty value
+        ('user_pref("a.b", "");\n', {"a.b": ""}),
         # invalid value
         ('user_pref("a.b.c", asd);\n', None),
         # unbalanced quotes
@@ -279,6 +286,8 @@ def test_adb_process_12(tmp_path):
         ('user_pref("a", );\n', None),
         # empty pref name
         ('user_pref("", 0);\n', None),
+        # missing pref name
+        ("user_pref(, 0);\n", None),
         # unquoted pref name
         ("user_pref(test, 0);\n", None),
     ],

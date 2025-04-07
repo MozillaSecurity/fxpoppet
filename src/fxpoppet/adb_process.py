@@ -321,7 +321,10 @@ class ADBProcess:
                 if not pref:
                     continue
                 # parse name
-                name = pref.group("name")
+                name: str = pref.group("name")
+                if not name:
+                    LOG.error("Pref name is missing")
+                    return None
                 if name[0] == "'" == name[-1]:
                     name = name.strip("'")
                 elif name[0] == '"' == name[-1]:
@@ -330,10 +333,13 @@ class ADBProcess:
                     LOG.error("Pref name is not quoted (%s)", name)
                     return None
                 if not name:
-                    LOG.error("Pref name is missing")
+                    LOG.error("Pref name is empty")
                     return None
                 # parse value
                 value: str = pref.group("value")
+                if not value:
+                    LOG.error("Pref %r is missing value", name)
+                    return None
                 if value in ("false", "true"):
                     out[name] = value == "true"
                 elif value[0] == "'" == value[-1]:
