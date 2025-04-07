@@ -4,11 +4,10 @@
 from argparse import ArgumentParser, Namespace
 from logging import DEBUG, ERROR, INFO, WARNING, basicConfig, getLogger
 from os import getenv
-from os.path import dirname, isfile
-from os.path import join as path_join
+from pathlib import Path
 
 from .adb_process import ADBProcess
-from .adb_session import ADBSession
+from .adb_session import DEVICE_TMP, ADBSession
 
 LOG = getLogger("adb_device")
 
@@ -48,15 +47,15 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
         type=int,
         help="Enable(1) or disable(0) airplane mode",
     )
-    parser.add_argument("--install", help="Path to APK to install")
-    parser.add_argument("--launch", help="Path to APK to launch")
+    parser.add_argument("--install", type=Path, help="APK to install")
+    parser.add_argument("--launch", type=Path, help="APK to launch")
     parser.add_argument(
         "--log-level",
         choices=sorted(log_level_map),
         default="INFO",
         help="Configure console logging (default: %(default)s)",
     )
-    parser.add_argument("--logs", help="Location to save logs")
+    parser.add_argument("--logs", type=Path, help="Location to save logs")
     parser.add_argument("--ip", help="IP address of target device")
     parser.add_argument(
         "--non-root", action="store_true", help="Connect as non-root user"
@@ -64,15 +63,17 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     parser.add_argument(
         "--port", default=5555, type=int, help="ADB listening port on target device"
     )
-    parser.add_argument("--prep", help="Prepare the device for fuzzing. Path to APK")
+    parser.add_argument(
+        "--prep", type=Path, help="APK to use to prepare the device for fuzzing."
+    )
 
     # sanity check args
     args = parser.parse_args(argv)
     if not any((args.airplane_mode is not None, args.install, args.launch, args.prep)):
         parser.error("No options selected")
     for apk in (args.install, args.launch, args.prep):
-        if apk is not None and not isfile(apk):
-            parser.error(f"Invalid APK {apk!r}")
+        if apk is not None and not apk.is_file():
+            parser.error(f"Invalid APK '{apk}'")
     args.log_level = log_level_map[args.log_level]
     return args
 
@@ -83,7 +84,7 @@ def main(args: Namespace) -> int:
     LOG.info("Connecting to device...")
     session = ADBSession.create(args.ip, args.port, as_root=not args.non_root)
     if session is None:
-        LOG.error("Failed to connect to IP:%r port:%r", args.ip, args.port)
+        LOG.error("Failed to connect to IP:%r port:%d", args.ip, args.port)
         return 1
     try:
         if args.prep is not None:
@@ -107,26 +108,26 @@ def main(args: Namespace) -> int:
         if args.install is not None:
             pkg_name = ADBSession.get_package_name(args.install)
             if pkg_name is None:
-                LOG.error("Failed to lookup package name in %r", args.install)
+                LOG.error("Failed to lookup package name in '%s'", args.install)
                 return 1
             if session.uninstall(pkg_name):
                 LOG.info("Uninstalled existing %r.", pkg_name)
-            LOG.info("Installing %r from %r...", pkg_name, args.install)
+            LOG.info("Installing %r from '%s'...", pkg_name, args.install)
             package = session.install(args.install)
             if not package:
-                LOG.error("Could not install %r", args.install)
+                LOG.error("Could not install '%s'", args.install)
                 return 1
-            llvm_sym = path_join(dirname(args.install), "llvm-symbolizer")
-            if isfile(llvm_sym):
+            llvm_sym = args.install.parent / "llvm-symbolizer"
+            if llvm_sym.is_file():
                 LOG.info("Installing llvm-symbolizer...")
-                session.install_file(llvm_sym, "/data/local/tmp/", mode="777")
+                session.install_file(llvm_sym, DEVICE_TMP, mode="777")
             # set wait for debugger
             # session.shell(["am", "set-debug-app", "-w", "--persistent", package])
             LOG.info("Installed %s.", package)
         if args.launch:
             pkg_name = ADBSession.get_package_name(args.launch)
             if pkg_name is None:
-                LOG.error("Failed to lookup package name in %r", args.install)
+                LOG.error("Failed to lookup package name in '%s'", args.install)
                 return 1
             proc = ADBProcess(pkg_name, session)
             try:
@@ -138,7 +139,7 @@ def main(args: Namespace) -> int:
                 pass
             finally:
                 proc.close()
-                if args.logs:
+                if args.logs is not None:
                     proc.save_logs(args.logs)
                 proc.cleanup()
                 LOG.info("Closed.")

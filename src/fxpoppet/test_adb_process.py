@@ -2,8 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # pylint: disable=protected-access
-from os import listdir
-from os.path import isdir
+from pathlib import PurePosixPath
 from shutil import rmtree
 
 from pytest import mark, raises
@@ -150,13 +149,15 @@ def test_adb_process_09(mocker):
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
     with ADBProcess("org.some.app", fake_session) as proc:
-        proc.profile = "profile_path"
+        proc.profile = PurePosixPath("profile_path")
         # no log or minidump files
         fake_session.listdir.return_value = []
         assert not proc.find_crashreports()
         # contains minidump file
-        fake_session.listdir.side_effect = (["somefile.txt", "test.dmp"],)
-        assert any(x.endswith("test.dmp") for x in proc.find_crashreports())
+        fake_session.listdir.side_effect = (
+            [PurePosixPath("somefile.txt"), PurePosixPath("test.dmp")],
+        )
+        assert any(x.name == "test.dmp" for x in proc.find_crashreports())
         # contains missing path
         fake_session.listdir.side_effect = (FileNotFoundError("test"),)
         assert not proc.find_crashreports()
@@ -174,10 +175,10 @@ def test_adb_process_10(mocker, tmp_path):
     dmp_path = tmp_path / "dst"
     with ADBProcess("org.some.app", fake_session) as proc:
         # without proc.logs set
-        proc.save_logs(str(dmp_path))
+        proc.save_logs(dmp_path)
         # with proc.logs set
-        proc.logs = str(log_path)
-        proc.save_logs(str(dmp_path))
+        proc.logs = log_path
+        proc.save_logs(dmp_path)
     assert any(dmp_path.glob("fake.txt"))
 
 
@@ -198,7 +199,7 @@ def test_adb_process_11(mocker, tmp_path):
     with ADBProcess("org.some.app", fake_session) as proc:
         # no extra logs
         proc._process_logs([])
-        assert "log_logcat.txt" in listdir(proc.logs)
+        assert (proc.logs / "log_logcat.txt").is_file()
         rmtree(proc.logs)
         proc.logs = None
         assert fake_proc_md.call_count == 0
@@ -208,8 +209,8 @@ def test_adb_process_11(mocker, tmp_path):
         (tmp_path / "unprocessed" / "log.dmp").touch()
         (tmp_path / "unprocessed" / "asan_log.dmp").touch()
         proc._process_logs(["log.dmp", "asan_log.txt"])
-        assert isdir(proc.logs)
-        assert "log_logcat.txt" in listdir(proc.logs)
+        assert proc.logs.is_dir()
+        assert (proc.logs / "log_logcat.txt").is_file()
         rmtree(proc.logs)
         assert fake_proc_md.call_count == 1
         assert fake_session.pull.call_count == 2
@@ -220,7 +221,7 @@ def test_adb_process_12(tmp_path):
     log_path = tmp_path / "logs"
     log_path.mkdir()
     # missing log_logcat.txt
-    ADBProcess._split_logcat(str(log_path), "fake.package")
+    ADBProcess._split_logcat(log_path, "fake.package")
     assert not any(log_path.iterdir())
     # with log_logcat.txt
     (tmp_path / "logs" / "log_logcat.txt").write_text(
@@ -247,7 +248,7 @@ def test_adb_process_12(tmp_path):
         "07-27 12:39:27.442 18461 18481 F MOZ_CRASH: Hit MOZ_CRASH(test) at gpp.rs:17\n"
         "07-27 12:39:27.443  90  90 I eckoThrea: potentially missed\n"
     )
-    ADBProcess._split_logcat(str(log_path), "fake.package")
+    ADBProcess._split_logcat(log_path, "fake.package")
     assert any(log_path.iterdir())
     assert (tmp_path / "logs" / "log_stdout.txt").read_text().rstrip() == "test, line1"
     stderr_lines = (tmp_path / "logs" / "log_stderr.txt").read_text().splitlines()
@@ -286,4 +287,4 @@ def test_adb_process_13(tmp_path, input_data, result):
     """test ADBProcess.prefs_to_dict()"""
     prefs_js = tmp_path / "prefs.js"
     prefs_js.write_text(input_data)
-    assert ADBProcess.prefs_to_dict(str(prefs_js)) == result
+    assert ADBProcess.prefs_to_dict(prefs_js) == result

@@ -4,14 +4,13 @@
 
 from __future__ import annotations
 
-import os
 import re
 from enum import Enum, auto, unique
 from logging import getLogger
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from random import getrandbits
 from shutil import copy, rmtree
-from tempfile import NamedTemporaryFile, mkdtemp
+from tempfile import TemporaryDirectory, mkdtemp
 from time import sleep, time
 from typing import TYPE_CHECKING
 
@@ -19,7 +18,7 @@ from ffpuppet.bootstrapper import Bootstrapper
 from ffpuppet.minidump_parser import MinidumpParser
 from yaml import safe_dump
 
-from .adb_session import ADBSession, ADBSessionError
+from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -73,18 +72,23 @@ class ADBProcess:
         assert isinstance(session, ADBSession), "Expecting ADBSession"
         if not session.is_installed(package_name):
             raise ADBSessionError(f"Package {package_name!r} is not installed")
-        self._launches = 0  # number of successful browser launches
-        self._package = package_name  # package to use as target process
-        self._pid: int | None = None  # pid of current target process
-        self._profile_template = use_profile  # profile that is used as a template
-        self._session = session  # ADB session with device
+        # number of successful browser launches
+        self._launches = 0
+        # package to use as target process
+        self._package = package_name
+        # pid of current target process
+        self._pid: int | None = None
+        # profile that is used as a template
+        self._profile_template = use_profile
+        # ADB session with device
+        self._session = session
         # Note: geckview_example fails to read a profile from /sdcard/ atm
         # self._working_path = "/sdcard/ADBProc_%08X" % (getrandbits(32),)
-        self._working_path = f"/data/local/tmp/ADBProc_{getrandbits(32):08X}"
+        self._working_path = DEVICE_TMP / f"ADBProc_{getrandbits(32):08X}"
         # self._sanitizer_logs = "%s/sanitizer_logs" % (self._working_path,)
-        self.logs: str | None = None
+        self.logs: Path | None = None
         # profile path on device
-        self.profile: str | None = None
+        self.profile: PurePosixPath | None = None
         self.reason: Reason | None = Reason.CLOSED
 
     def __enter__(self) -> ADBProcess:
@@ -130,12 +134,12 @@ class ADBProcess:
                 self.wait()
                 self._process_logs(crash_reports)
                 # remove remote working path
-                self._session.shell(["rm", "-rf", self._working_path])
+                self._session.shell(["rm", "-rf", str(self._working_path)])
                 # remove remote config yaml
-                cfg_file = f"/data/local/tmp/{self._package}-geckoview-config.yaml"
+                cfg_file = str(DEVICE_TMP / f"{self._package}-geckoview-config.yaml")
                 self._session.shell(["rm", "-rf", cfg_file])
                 # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
-                if "log_asan.txt" in os.listdir(self.logs):
+                if self.logs and (self.logs / "log_asan.txt").is_file():
                     self.reason = Reason.ALERT
 
         except ADBSessionError:
@@ -145,22 +149,22 @@ class ADBProcess:
         if self.reason is None:
             self.reason = Reason.CLOSED
 
-    def find_crashreports(self) -> list[str]:
-        reports: list[str] = []
+    def find_crashreports(self) -> list[PurePosixPath]:
+        reports: list[PurePosixPath] = []
         # look for logs from sanitizers
         # for fname in self._session.listdir(self._sanitizer_logs):
         #    reports.append(os.path.join(self._sanitizer_logs, fname))
 
         if self.profile:
+            keep_suffix = frozenset((".dmp", ".extra"))
             # check for minidumps
-            md_path = os.path.join(self.profile, "minidumps")
+            md_path = self.profile / "minidumps"
             try:
                 for fname in self._session.listdir(md_path):
-                    if ".dmp" in fname or ".extra" in fname:
-                        reports.append(os.path.join(md_path, fname))  # noqa: PERF401
+                    if fname.suffix in keep_suffix:
+                        reports.append(md_path / fname)  # noqa: PERF401
             except FileNotFoundError:
                 LOG.debug("%s does not exist", md_path)
-
         return reports
 
     def is_healthy(self) -> bool:
@@ -180,7 +184,7 @@ class ADBProcess:
         url: str,
         env_mod: Mapping[str, str] | None = None,
         launch_timeout: int = 60,
-        prefs_js: str | None = None,
+        prefs_js: Path | None = None,
     ) -> bool:
         LOG.debug("launching %r", url)
         assert self._launches > -1, "clean_up() has been called"
@@ -238,8 +242,10 @@ class ADBProcess:
             # create location to store sanitizer logs
             # self._session.shell(["mkdir", "-p", self._sanitizer_logs])
             # create empty profile
-            self.profile = f"{self._working_path}/gv_profile_{getrandbits(32):08X}"
-            self._session.shell(["mkdir", "-p", self.profile])
+            self.profile = PurePosixPath(
+                f"{self._working_path}/gv_profile_{getrandbits(32):08X}"
+            )
+            self._session.shell(["mkdir", "-p", str(self.profile)])
             # add environment variables
             env_mod = dict(env_mod or {})
             env_mod.setdefault("MOZ_SKIA_DISABLE_ASSERTS", "1")
@@ -248,7 +254,7 @@ class ADBProcess:
                 {
                     "abort_on_error": "1",
                     "color": "0",
-                    "external_symbolizer_path": "'/data/local/tmp/llvm-symbolizer'",
+                    "external_symbolizer_path": f"'{DEVICE_TMP / 'llvm-symbolizer'}'",
                     # "log_path": "'%s/log_san.txt'" % (self._sanitizer_logs,),
                     "symbolize": "1",
                 },
@@ -257,20 +263,19 @@ class ADBProcess:
             # build *-geckoview-config.yaml
             # https://firefox-source-docs.mozilla.org/mobile/android/geckoview/...
             # consumer/automation.html#configuration-file-format
-            cfg_file = f"{self._package}-geckoview-config.yaml"
-            with NamedTemporaryFile("w+t") as cfp:
-                cfp.write(
+            with TemporaryDirectory(prefix="fxp_cfp_") as tmp_cfp:
+                cfg_yml = Path(tmp_cfp) / f"{self._package}-geckoview-config.yaml"
+                cfg_yml.write_text(
                     safe_dump(
                         {
-                            "args": ["--profile", self.profile],
+                            "args": ["--profile", str(self.profile)],
                             "env": env_mod,
                             "prefs": prefs,
                         }
                     )
                 )
-                cfp.flush()
-                if not self._session.push(cfp.name, f"/data/local/tmp/{cfg_file}"):
-                    raise ADBLaunchError(f"Could not upload {cfg_file!r}")
+                if not self._session.push(cfg_yml, DEVICE_TMP / cfg_yml.name):
+                    raise ADBLaunchError(f"Could not upload '{cfg_yml.name}'")
             cmd = [
                 "am",
                 "start",
@@ -307,10 +312,10 @@ class ADBProcess:
         return self._launches
 
     @staticmethod
-    def prefs_to_dict(prefs_file: str) -> dict[str, bool | int | str] | None:
-        pattern = re.compile(r"user_pref\((?P<name>.+?),\s*(?P<value>.+)\);")
+    def prefs_to_dict(src: Path) -> dict[str, bool | int | str] | None:
+        pattern = re.compile(r"user_pref\((?P<name>.*?),\s*(?P<value>.*?)\);")
         out: dict[str, bool | int | str] = {}
-        with open(prefs_file, encoding="utf-8") as in_fp:
+        with src.open(encoding="utf-8") as in_fp:
             for line in in_fp:
                 pref = pattern.match(line)
                 if not pref:
@@ -343,15 +348,17 @@ class ADBProcess:
                         return None
         return out
 
-    def _process_logs(self, crash_reports: list[str]) -> None:
+    def _process_logs(self, crash_reports: list[PurePosixPath]) -> None:
         assert self.logs is None
-        assert self.profile is not None
+        if self.profile is None:
+            LOG.debug("no logs to process since browser was not launched")
+            return
         # TODO: use a common tmp dir
-        self.logs = mkdtemp(prefix="mp-logs_")
-        unprocessed = Path(self.logs) / "unprocessed"
-        unprocessed.mkdir(exist_ok=True)
+        self.logs = Path(mkdtemp(prefix="mp-logs_"))
+        unprocessed = self.logs / "unprocessed"
+        unprocessed.mkdir()
 
-        with (Path(self.logs) / "log_logcat.txt").open("w") as log_fp:
+        with (self.logs / "log_logcat.txt").open("w") as log_fp:
             # TODO: should this filter by pid or not?
             log_fp.write(self._session.collect_logs())
             # log_fp.write(self._session.collect_logs(pid=self._pid))
@@ -361,10 +368,10 @@ class ADBProcess:
 
         # copy crash logs from the device
         for fname in crash_reports:
-            self._session.pull(fname, str(unprocessed))
+            self._session.pull(fname, unprocessed)
 
         # TODO: fix
-        dmp_files = MinidumpParser.dmp_files(Path(self.profile) / "minidumps")
+        dmp_files = MinidumpParser.dmp_files(unprocessed)
         if dmp_files and not MinidumpParser.mdsw_available():
             LOG.error("Unable to process minidump, minidump-stackwalk is required.")
 
@@ -380,39 +387,38 @@ class ADBProcess:
         #    logger.save_logs(self.logs)
 
     def _remove_logs(self) -> None:
-        if self.logs is not None and os.path.isdir(self.logs):
+        if self.logs is not None and self.logs.is_dir():
             rmtree(self.logs)
             self.logs = None
 
     @staticmethod
-    def _split_logcat(log_path: str, package_name: bytes | str) -> None:
+    def _split_logcat(logs: Path, package_name: str) -> None:
         # Roughly split out stderr and stdout from logcat
         # This is to support FuzzManager. The original logcat output is also
         # included in the report so nothing is lost.
-        logcat = os.path.join(log_path, "log_logcat.txt")
-        if not os.path.isfile(logcat):
+        assert package_name
+        logcat = logs / "log_logcat.txt"
+        if not logcat.is_file():
             LOG.warning("log_logcat.txt does not exist!")
             return
-        err_log = os.path.join(log_path, "log_stderr.txt")
-        if os.path.isfile(err_log):
+        err_log = logs / "log_stderr.txt"
+        if err_log.is_file():
             LOG.warning("log_stderr.txt already exist! Overwriting...")
-        out_log = os.path.join(log_path, "log_stdout.txt")
-        if os.path.isfile(out_log):
+        out_log = logs / "log_stdout.txt"
+        if out_log.is_file():
             LOG.warning("log_stdout.txt already exist! Overwriting...")
-        assert package_name
-        if not isinstance(package_name, bytes):
-            package_name = package_name.encode("utf-8")
+        package_name_bytes = package_name.encode("utf-8")
         # create set of filter pids
         # this will include any line that mentions "Gecko", "MOZ_" or the package name
         asan_tid = None
         filter_pids = set()
         re_id = re.compile(rb"^\d+-\d+\s+(\d+[:.]){3}\d+\s+(?P<pid>\d+)\s+(?P<tid>\d+)")
-        with open(logcat, "rb") as lc_fp:
+        with logcat.open("rb") as lc_fp:
             for line in lc_fp:
                 if (
                     b"Gecko" not in line
                     and b"MOZ_" not in line
-                    and package_name not in line
+                    and package_name_bytes not in line
                     and b"wrap.sh" not in line
                 ):
                     continue
@@ -425,9 +431,9 @@ class ADBProcess:
         LOG.debug("%d interesting pid(s) found in logcat output", len(filter_pids))
         # filter logs
         with (
-            open(logcat, "rb") as lc_fp,
-            open(err_log, "wb") as e_fp,
-            open(out_log, "wb") as o_fp,
+            logcat.open("rb") as lc_fp,
+            err_log.open("wb") as e_fp,
+            out_log.open("wb") as o_fp,
         ):
             for line in lc_fp:
                 # quick check if pid is in the line
@@ -446,15 +452,15 @@ class ADBProcess:
                     o_fp.write(line.split(b": ", 1)[-1])
                 else:
                     e_fp.write(line.split(b": ", 1)[-1])
-        # Break out ASan logs (to be removed when ASAN_OPTIONS=log_path works)
+        # Break out ASan logs (to be removed when ASAN_OPTIONS=logs works)
         # This could be merged into the above block but it is kept separate
         # so it can be removed easily in the future.
         if asan_tid is not None:
-            asan_log = os.path.join(log_path, "log_asan.txt")
-            if os.path.isfile(asan_log):
+            asan_log = logs / "log_asan.txt"
+            if asan_log.is_file():
                 LOG.warning("log_asan.txt already exist! Overwriting...")
             found_log = False
-            with open(logcat, "rb") as lc_fp, open(asan_log, "wb") as o_fp:
+            with logcat.open("rb") as lc_fp, asan_log.open("wb") as o_fp:
                 for line in lc_fp:
                     # quick check if thread id is in the line
                     if asan_tid not in line:
@@ -474,7 +480,7 @@ class ADBProcess:
 
     def save_logs(
         self,
-        log_path: str,
+        dst: Path,
         meta: bool = False,  # pylint: disable=unused-argument
     ) -> None:
         assert self.reason is not None, "Call close() first!"
@@ -483,35 +489,33 @@ class ADBProcess:
             LOG.warning("No logs available to save.")
             return
         # copy logs to location specified by log_file
-        if not os.path.isdir(log_path):
-            os.makedirs(log_path)
-        log_path = os.path.abspath(log_path)
-
-        for fname in os.listdir(self.logs):
-            full_name = os.path.join(self.logs, fname)
+        dst.mkdir(parents=True, exist_ok=True)
+        for entry in self.logs.iterdir():
             # skip directories
-            if not os.path.isfile(full_name):
-                continue
-            copy(full_name, log_path)
+            if entry.is_file():
+                copy(entry, dst)
 
     def wait_on_files(
-        self, wait_files: Iterable[str], poll_rate: float = 0.5, timeout: int = 60
+        self,
+        wait_files: Iterable[PurePosixPath],
+        poll_rate: float = 0.5,
+        timeout: int = 60,
     ) -> bool:
         assert poll_rate >= 0
         assert timeout >= 0
         assert poll_rate <= timeout
         wait_end = time() + timeout
-        wait_files = frozenset(self._session.realpath(x) for x in wait_files)
+        files = frozenset(str(self._session.realpath(x)) for x in wait_files)
 
-        while wait_files:
-            open_files = frozenset(x for _, x in self._session.open_files())
+        while files:
+            open_files = frozenset(str(x) for _, x in self._session.open_files())
             # check if any open files are in the wait file list
-            if not wait_files.intersection(open_files):
+            if not files.intersection(open_files):
                 break
             if wait_end <= time():
                 LOG.debug(
                     "Timeout waiting for: %s",
-                    ", ".join(x for x in open_files if x in wait_files),
+                    ", ".join(x for x in open_files if x in files),
                 )
                 return False
             sleep(poll_rate)

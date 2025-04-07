@@ -1,6 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from pathlib import Path
+
 from pytest import mark, raises
 
 from .main import main, parse_args
@@ -78,7 +80,7 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
     args = mocker.Mock(
         airplane_mode=None,
         launch=None,
-        install=str(apk),
+        install=apk,
         ip=None,
         non_root=False,
         prep=None,
@@ -129,7 +131,7 @@ def test_main_05(mocker):
         install=None,
         ip=None,
         non_root=False,
-        prep="fake.apk",
+        prep=Path("fake.apk"),
         port=12345,
     )
     assert main(args) == 0

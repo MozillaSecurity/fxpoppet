@@ -2,13 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # pylint: disable=protected-access
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from subprocess import CompletedProcess, TimeoutExpired
 from zipfile import ZipFile
 
 from pytest import mark, raises
 
 from .adb_session import (
+    DEVICE_TMP,
     ADBCommandError,
     ADBCommunicationError,
     ADBSession,
@@ -98,8 +99,6 @@ def test_adb_session_03():
         ADBSession("invalid.ip")
     with raises(ValueError):
         ADBSession("127.0.0.1", port=7)
-    with raises(ValueError):
-        ADBSession("127.0.0.1", port="bad")
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -585,19 +584,19 @@ def test_adb_session_14(tmp_path, mocker):
     session = ADBSession("127.0.0.1")
     session.connected = True
     # missing apk
-    with raises(IOError):
-        session.install("fake_path")
+    with raises(FileNotFoundError):
+        session.install(Path("missing"))
     # bad apk
     pkg_file = tmp_path / "package-name.txt"
-    apk_file = str(tmp_path / "bad.apk")
+    apk_file = tmp_path / "bad.apk"
     pkg_file.write_bytes(b"\n")
     with ZipFile(apk_file, mode="w") as z_out:
         z_out.write(str(pkg_file), "package-name.txt")
     with raises(ADBSessionError):
-        session.install(str(apk_file))
+        session.install(apk_file)
     # good apk
     pkg_file = tmp_path / "package-name.txt"
-    apk_file = str(tmp_path / "test.apk")
+    apk_file = tmp_path / "test.apk"
     syms_path = tmp_path / "symbols"
     syms_path.mkdir()
     pkg_file.write_bytes(b"test-package.blah.foo\n")
@@ -917,11 +916,11 @@ def test_adb_session_22(tmp_path, mocker):
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
     session = ADBSession("127.0.0.1")
     session.connected = True
-    with raises(IOError):
-        session.push("not_a_file", "dst")
+    with raises(FileNotFoundError):
+        session.push(Path("not_a_file"), "dst")
     push_file = tmp_path / "test.txt"
     push_file.write_bytes(b"test\n")
-    assert session.push(str(push_file), "dst")
+    assert session.push(push_file, "dst")
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -982,9 +981,9 @@ def test_adb_session_25(mocker):
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
     session = ADBSession("127.0.0.1")
     session.connected = True
-    with raises(IOError):
+    with raises(FileNotFoundError):
         session.listdir("missing-dir")
-    dir_list = session.listdir("fake-dir")
+    dir_list = tuple(str(x) for x in session.listdir("fake-dir"))
     assert len(dir_list) == 1
     assert "test" in dir_list
 
@@ -1019,14 +1018,14 @@ def test_adb_session_27(mocker, tmp_path):
     # use system aapt
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
     mocker.patch("fxpoppet.adb_session.which", return_value=str(fake_aapt))
-    assert ADBSession._aapt_check() == str(fake_aapt)
+    assert ADBSession._aapt_check() == fake_aapt
     # use recommended aapt
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
-    assert ADBSession._aapt_check() == str(fake_aapt)
+    assert ADBSession._aapt_check() == fake_aapt
     # aapt not installed
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
     mocker.patch("fxpoppet.adb_session.which", return_value=None)
-    with raises(EnvironmentError, match=r"Please install AAPT"):
+    with raises(OSError, match=r"Please install AAPT"):
         assert ADBSession._aapt_check()
 
 
@@ -1039,14 +1038,14 @@ def test_adb_session_28(mocker, tmp_path):
     # use system adb
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
     mocker.patch("fxpoppet.adb_session.which", return_value=str(fake_adb))
-    assert ADBSession._adb_check() == str(fake_adb)
+    assert ADBSession._adb_check() == fake_adb
     # use recommended adb
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
-    assert ADBSession._adb_check() == str(fake_adb)
+    assert ADBSession._adb_check() == fake_adb
     # adb not installed
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
     mocker.patch("fxpoppet.adb_session.which", return_value=None)
-    with raises(EnvironmentError, match=r"Please install ADB"):
+    with raises(OSError, match=r"Please install ADB"):
         assert ADBSession._adb_check()
 
 
@@ -1057,11 +1056,11 @@ def test_adb_session_29(mocker, tmp_path):
         "fxpoppet.adb_session.ADBSession._aapt_check", return_value=b"fake_aapt"
     )
     mocker.patch("fxpoppet.adb_session.check_output", return_value=b"")
-    with raises(IOError):
-        ADBSession.get_package_name("/fake/path")
+    with raises(FileNotFoundError):
+        ADBSession.get_package_name(Path("/fake/path"))
     fake_apk = tmp_path / "fake.apk"
     fake_apk.touch()
-    assert ADBSession.get_package_name(str(fake_apk)) is None
+    assert ADBSession.get_package_name(fake_apk) is None
     output = (
         b"package: name='org.mozilla.fennec_aurora' versionCode='2015624653'"
         b" versionName='68.0a1' platformBuildVersionName=''\n"
@@ -1102,7 +1101,7 @@ def test_adb_session_29(mocker, tmp_path):
         b"native-code: 'x86'"
     )
     mocker.patch("fxpoppet.adb_session.check_output", return_value=output)
-    assert ADBSession.get_package_name(str(fake_apk)) == "org.mozilla.fennec_aurora"
+    assert ADBSession.get_package_name(fake_apk) == "org.mozilla.fennec_aurora"
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -1156,9 +1155,9 @@ def test_adb_session_32(mocker):
     )
     session = ADBSession("127.0.0.1")
     session.connected = True
-    with raises(IOError):
-        session.realpath("missing/path")
-    assert session.realpath("existing/path") == "existing/path"
+    with raises(FileNotFoundError):
+        session.realpath(PurePosixPath("missing/path"))
+    assert str(session.realpath(PurePosixPath("existing/path"))) == "existing/path"
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -1398,7 +1397,7 @@ def test_adb_session_40(mocker):
         src = Path(src)
         assert src.name == "asan.options.gecko"
         assert src.read_text(encoding="ascii") in ("a=1:b=2", "b=2:a=1")
-        assert dst == "/data/local/tmp/"
+        assert str(dst) == str(DEVICE_TMP)
 
     mocker.patch(
         "fxpoppet.adb_session.ADBSession.install_file", side_effect=fake_install_file
@@ -1413,7 +1412,9 @@ def test_adb_session_41(mocker):
     mocker.patch("fxpoppet.adb_session.ADBSession.push", autospec=True)
     mocker.patch("fxpoppet.adb_session.ADBSession.shell", autospec=True)
     session = ADBSession()
-    session.install_file("a/b", "/sdcard/", mode="777", context="foo")
+    session.install_file(
+        Path("a/b"), PurePosixPath("/sdcard"), mode="777", context="foo"
+    )
 
 
 @mark.parametrize(

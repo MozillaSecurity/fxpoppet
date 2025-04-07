@@ -4,14 +4,14 @@
 
 from __future__ import annotations
 
-import socket
 from collections import namedtuple
 from contextlib import suppress
 from logging import getLogger
 from os import getenv
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from platform import system
 from shutil import which
+from socket import inet_aton
 from subprocess import PIPE, STDOUT, TimeoutExpired, check_output, run
 from tempfile import TemporaryDirectory
 from time import sleep, time
@@ -46,6 +46,7 @@ def _get_android_sdk() -> Path:
 
 
 ANDROID_SDK_ROOT = _get_android_sdk()
+DEVICE_TMP = PurePosixPath("/data/local/tmp")
 
 
 class ADBCommandError(Exception):
@@ -90,18 +91,18 @@ class ADBSession:
             LOG.debug("creating IP based session")
             try:
                 if ip_addr != "localhost":
-                    socket.inet_aton(ip_addr)
+                    inet_aton(ip_addr)
             except (OSError, TypeError):
                 raise ValueError("Invalid IP Address") from None
             self._ip_addr = ip_addr
-            if not isinstance(port, int) or not 0x10000 > port > 1024:
+            if not 0x10000 > port > 1024:
                 raise ValueError("Port must be valid integer between 1025 and 65535")
             self._port = port
 
     @classmethod
-    def _aapt_check(cls) -> str:
-        """Lookup the path for Android Asset Packaging Tool (AAPT).
-        An EnvironmentError is raised if the AAPT executable is not found.
+    def _aapt_check(cls) -> Path:
+        """Find Android Asset Packaging Tool (AAPT).
+        An OSError is raised if the AAPT executable is not found.
 
         Args:
             None
@@ -112,18 +113,18 @@ class ADBSession:
         skd_bin = ANDROID_SDK_ROOT / "android-9" / "aapt"
         if skd_bin.is_file():
             LOG.debug("using recommended aapt from '%s'", skd_bin)
-            return str(skd_bin)
+            return skd_bin
         installed_bin = which("aapt")
         if installed_bin is None:
             raise OSError("Please install AAPT")
         # TODO: update this to check aapt version
         LOG.warning("Using aapt binary from '%s'", installed_bin)
-        return installed_bin
+        return Path(installed_bin)
 
     @classmethod
-    def _adb_check(cls) -> str:
-        """Lookup the path for Android Debug Bridge (ADB).
-        An EnvironmentError is raised if the ADB executable is not found.
+    def _adb_check(cls) -> Path:
+        """Find Android Debug Bridge (ADB).
+        An OSError is raised if the ADB executable is not found.
 
         Args:
             None
@@ -134,7 +135,7 @@ class ADBSession:
         sdk_bin = ANDROID_SDK_ROOT / "platform-tools" / "adb"
         if sdk_bin.is_file():
             LOG.debug("using recommended adb from '%s'", sdk_bin)
-            return str(sdk_bin)
+            return sdk_bin
         installed_bin = which("adb")
         if installed_bin is None:
             raise OSError("Please install ADB")
@@ -143,7 +144,7 @@ class ADBSession:
         LOG.warning("You are not using the recommended ADB install!")
         LOG.warning("Either run the setup script or proceed with caution.")
         sleep(5)
-        return installed_bin
+        return Path(installed_bin)
 
     @staticmethod
     def _call_adb(cmd: list[str], timeout: int | None = None) -> tuple[int, str]:
@@ -188,11 +189,9 @@ class ADBSession:
         """
         cmd = ["ps", "-o", "pid,ppid,rss,name"]
         if pid is not None:
-            assert isinstance(pid, int)
             cmd.append(str(pid))
         if pid_children is not None:
-            assert isinstance(pid_children, int)
-            cmd += ["--ppid", str(pid_children)]
+            cmd.extend(("--ppid", str(pid_children)))
         if not pid and not pid_children:
             cmd.append("-A")
         for line in self.shell(cmd, timeout=30)[1].splitlines()[1:]:
@@ -227,7 +226,7 @@ class ADBSession:
             None
         """
         self.shell(
-            ["settings", "put", "global", "airplane_mode_on", "1" if state else "0"]
+            ["settings", "put", "global", "airplane_mode_on", ("1" if state else "0")]
         )
         self.shell(
             [
@@ -516,19 +515,19 @@ class ADBSession:
         return False
 
     @classmethod
-    def get_package_name(cls, apk_path: str) -> str | None:
+    def get_package_name(cls, apk: Path) -> str | None:
         """Retrieve the package name from an APK.
 
         Args:
-            apk_name: APK to retrieve the package name from.
+            apk: APK to retrieve the package name from.
 
         Returns:
             Package name or None.
         """
-        if not Path(apk_path).is_file():
+        if not apk.is_file():
             raise FileNotFoundError("APK path must point to a file")
         aapt = cls._aapt_check()
-        apk_info = check_output((aapt, "dump", "badging", apk_path))
+        apk_info = check_output((str(aapt), "dump", "badging", str(apk)))
         for line in apk_info.splitlines():
             if line.startswith(b"package: name="):
                 return line.split()[1][5:].strip(b"'").decode("utf-8", errors="ignore")
@@ -546,25 +545,25 @@ class ADBSession:
         ret_code, pid = self.shell(["pidof", package_name], timeout=30)
         return int(pid) if ret_code == 0 else None
 
-    def install(self, apk_path: str) -> str:
+    def install(self, apk: Path) -> str:
         """Install APK on the connected device, grant R/W permissions to /sdcard and
         lookup the name of the installed APK.
 
         Args:
-            apk_name: APK to install.
+            apk: APK to install.
 
         Returns:
             Package name of APK that has been installed.
         """
-        LOG.debug("installing %r", apk_path)
-        if not Path(apk_path).is_file():
-            raise FileNotFoundError(f"APK does not exist {apk_path!r}")
+        LOG.debug("installing %s", apk)
+        if not apk.is_file():
+            raise FileNotFoundError(f"APK does not exist '{apk}'")
         # lookup package name
-        pkg_name = self.get_package_name(apk_path)
+        pkg_name = self.get_package_name(apk)
         if pkg_name is None:
             raise ADBSessionError("Could not find APK package name")
-        if self.call(["install", "-g", "-r", apk_path], timeout=180)[0] != 0:
-            raise ADBSessionError(f"Failed to install {apk_path!r}")
+        if self.call(["install", "-g", "-r", str(apk)], timeout=180)[0] != 0:
+            raise ADBSessionError(f"Failed to install '{apk}'")
         # set permissions
         self.shell(
             ["pm", "grant", pkg_name, "android.permission.READ_EXTERNAL_STORAGE"]
@@ -572,30 +571,34 @@ class ADBSession:
         self.shell(
             ["pm", "grant", pkg_name, "android.permission.WRITE_EXTERNAL_STORAGE"]
         )
-        LOG.debug("installed package %r (%r)", pkg_name, apk_path)
+        LOG.debug("installed package %r (%s)", pkg_name, apk)
         return pkg_name
 
     def install_file(
-        self, src: str, dst: str, mode: str | None = None, context: int | None = None
+        self,
+        src: Path,
+        dst: PurePosixPath,
+        mode: str | None = None,
+        context: int | None = None,
     ) -> None:
         """Install file on the device filesystem and set permissions.
 
         Args:
-            src: Path to file to install on the device.
-            dst: Path to location on device to install file.
+            src: File to install on the device.
+            dst: Location on device to install file.
             mode: chmod mode to use.
             context: chcon context to use.
 
         Returns:
             None
         """
-        full_dst = str(Path(dst) / Path(src).name)
-        self.push(src, full_dst)
-        self.shell(["chown", "root.shell", full_dst])
+        remote_dst = dst / src.name
+        self.push(src, remote_dst)
+        self.shell(["chown", "root.shell", str(remote_dst)])
         if mode is not None:
-            self.shell(["chmod", mode, full_dst])
+            self.shell(["chmod", mode, str(remote_dst)])
         if context is not None:
-            self.shell(["chcon", str(context), full_dst])
+            self.shell(["chcon", str(context), str(remote_dst)])
 
     def is_installed(self, package_name: str) -> bool:
         """Check if a package is installed on the connected device.
@@ -608,8 +611,8 @@ class ADBSession:
         """
         return package_name in self.packages
 
-    def listdir(self, path: str) -> list[str]:
-        """List the contents of a directory.
+    def listdir(self, path: PurePosixPath) -> list[PurePosixPath]:
+        """Contents of a directory.
 
         Args:
             path: Directory to list the contents of.
@@ -617,17 +620,17 @@ class ADBSession:
         Returns:
             Directory content listing.
         """
-        ret_val, output = self.shell(["ls", "-A", path])
+        ret_val, output = self.shell(["ls", "-A", str(path)])
         if ret_val != 0:
-            raise FileNotFoundError(f"{path!r} does not exist")
-        return output.splitlines()
+            raise FileNotFoundError(f"'{path}' does not exist")
+        return [PurePosixPath(x) for x in output.splitlines()]
 
     def open_files(
         self,
         pid: int | None = None,
         children: bool = False,
-        files: Iterable[str] | None = None,
-    ) -> Generator[tuple[int, str]]:
+        files: Iterable[PurePosixPath] | None = None,
+    ) -> Generator[tuple[int, PurePosixPath]]:
         """Look up open file on the device.
 
         Args:
@@ -651,7 +654,7 @@ class ADBSession:
             assert not children, "children requires pid"
             pids = None
         if files:
-            cmd.extend(files)
+            cmd.extend(str(x) for x in files)
         for line in self.shell(cmd)[1].splitlines():
             if line.endswith("Permission denied)") or " REG " not in line:
                 # only include regular files for now
@@ -660,7 +663,7 @@ class ADBSession:
                 file_info = line.split()
                 if pids is None or file_info[1] in pids:
                     # tuple containing pid and filename
-                    yield (int(file_info[1]), file_info[-1])
+                    yield (int(file_info[1]), PurePosixPath(file_info[-1]))
 
     @property
     def packages(self) -> Generator[str]:
@@ -691,47 +694,47 @@ class ADBSession:
         str_pid = str(pid)
         return str_pid in self.shell(["ps", "-p", str_pid, "-o", "pid"], timeout=30)[1]
 
-    def pull(self, src: str, dst: str) -> bool:
+    def pull(self, src: PurePosixPath, dst: Path) -> bool:
         """Copy file from connected device.
 
         Args:
-            src: Path to file on the device to copy.
+            src: File on the device to copy.
             dst: Location on the local machine to copy the file to.
 
         Returns:
             True if successful otherwise False
         """
-        LOG.debug("pull(%r, %r)", src, dst)
-        return self.call(["pull", src, dst], timeout=180)[0] == 0
+        LOG.debug("pull('%s', '%s')", src, dst)
+        return self.call(["pull", str(src), str(dst)], timeout=180)[0] == 0
 
-    def push(self, src: str, dst: str) -> bool:
+    def push(self, src: Path, dst: PurePosixPath) -> bool:
         """Copy file to connected device.
 
         Args:
-            src: Path to file on the local machine to copy.
+            src: File on the local machine to copy.
             dst: Location on the connected device to copy the file to.
 
         Returns:
             True if successful otherwise False
         """
-        LOG.debug("push(%r, %r)", src, dst)
-        if not Path(src).exists():
-            raise FileNotFoundError(f"{src!r} does not exist")
-        return self.call(["push", src, dst], timeout=180)[0] == 0
+        LOG.debug("push('%s', '%s')", src, dst)
+        if not src.exists():
+            raise FileNotFoundError(f"'{src}' does not exist")
+        return self.call(["push", str(src), str(dst)], timeout=180)[0] == 0
 
-    def realpath(self, path: str) -> str:
+    def realpath(self, path: PurePosixPath) -> PurePosixPath:
         """Get canonical path of the specified path.
 
         Args:
-            path: Path to file on the connected device.
+            path: File on the connected device.
 
         Returns:
             Canonical path of the specified path.
         """
-        ret_val, output = self.shell(["realpath", path])
+        ret_val, output = self.shell(["realpath", str(path)])
         if ret_val != 0:
-            raise FileNotFoundError(f"{path!r} does not exist")
-        return output
+            raise FileNotFoundError(f"'{path}' does not exist")
+        return PurePosixPath(output)
 
     def reboot_device(
         self, boot_timeout: int = 300, max_attempts: int = 60, retry_delay: int = 1
@@ -822,7 +825,7 @@ class ADBSession:
             optfile = Path(working_path) / (f"{prefix}.options.gecko")
             optfile.write_text(":".join(f"{x[0]}={x[1]}" for x in options.items()))
             # TODO: use push() instead?
-            self.install_file(str(optfile), "/data/local/tmp/", mode="666")
+            self.install_file(optfile, DEVICE_TMP, mode="666")
 
     def set_enforce(self, value: int) -> None:
         """Set SELinux mode.
