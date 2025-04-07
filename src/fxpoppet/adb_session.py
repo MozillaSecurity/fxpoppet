@@ -253,8 +253,9 @@ class ADBSession:
             Exit code and stderr, stdout of ADB call.
         """
         assert cmd
-        cmd = [self._adb_bin, *cmd]
-        LOG.debug("call %r (%r)", " ".join(cmd[1:]), timeout)
+        cmd = [str(self._adb_bin), *cmd]
+        if self._debug_adb:
+            LOG.debug("call %r (%r)", " ".join(cmd[1:]), timeout)
         if not self.connected and cmd[1] not in ("connect", "devices", "disconnect"):
             raise ADBCommunicationError("ADB session is not connected!")
         ret_code, output = self._call_adb(cmd, timeout=timeout)
