@@ -50,25 +50,37 @@ DEVICE_TMP = PurePosixPath("/data/local/tmp")
 
 
 class ADBCommandError(Exception):
-    """Raised when an ADB command is invalid or unrecognized"""
+    """ADB command is invalid or unrecognized"""
 
 
 class ADBCommunicationError(Exception):
-    """Raised when ADB fails to communicate with the device"""
+    """ADB failed to communicate with the device"""
 
 
 class ADBSessionError(Exception):
-    """Raised when an operation fails unexpectedly or session state is invalid"""
+    """Operation failed unexpectedly or session state is invalid"""
 
 
 # pylint: disable=too-many-public-methods
 class ADBSession:
+    """ADB Session management.
+
+    Attributes:
+        _adb_bin: ADB binary to use.
+        _cpu_arch: Android CPU architecture string.
+        _debug_adb: Include ADB output in debug output.
+        _ip_addr: Target device IP address.
+        _os_version: Android version string.
+        _port: ADB listening port.
+        connected: ADB connection state.
+        symbols: Location of symbols on the local machine.
+    """
+
     __slots__ = (
         "_adb_bin",
         "_cpu_arch",
         "_debug_adb",
         "_ip_addr",
-        "_os_version",
         "_os_version",
         "_port",
         "_root",
@@ -78,11 +90,11 @@ class ADBSession:
 
     def __init__(self, ip_addr: str | None = None, port: int = 5555) -> None:
         self._adb_bin = self._adb_check()
-        self._cpu_arch: str | None = None  # Android CPU architecture string
-        self._debug_adb = getenv("SHOW_ADB_DEBUG", "0") != "0"  # include ADB output
-        self._ip_addr: str | None = None  # target device IP address
-        self._os_version: str | None = None  # Android version string
-        self._port: int | None = None  # ADB listening port
+        self._cpu_arch: str | None = None
+        self._debug_adb = getenv("SHOW_ADB_DEBUG", "0") != "0"
+        self._ip_addr: str | None = None
+        self._os_version: str | None = None
+        self._port: int | None = None
         self._root = False
         self.connected = False
         self.symbols: dict[str, str] = {}
@@ -140,7 +152,7 @@ class ADBSession:
         if installed_bin is None:
             raise OSError("Please install ADB")
         # TODO: update this to check adb version
-        LOG.warning("Using adb from '%s'", installed_bin)
+        LOG.warning("Using adb binary '%s'", installed_bin)
         LOG.warning("You are not using the recommended ADB install!")
         LOG.warning("Either run the setup script or proceed with caution.")
         sleep(5)
@@ -240,22 +252,22 @@ class ADBSession:
         )
 
     def call(
-        self, cmd: list[str], device_required: bool = True, timeout: int = 120
+        self, args: list[str], device_required: bool = True, timeout: int = 120
     ) -> tuple[int, str]:
-        """Call ADB with arguments provided in cmd.
+        """Call ADB with provided arguments.
 
         Args:
-            cmd: Strings to pass as arguments when calling ADB.
+            args: Arguments to pass to ADB.
             device_required: A device must be available.
             timeout: Seconds to wait for ADB call to complete.
 
         Returns:
             Exit code and stderr, stdout of ADB call.
         """
-        assert cmd
-        cmd = [str(self._adb_bin), *cmd]
+        assert args
         if self._debug_adb:
-            LOG.debug("call %r (%r)", " ".join(cmd[1:]), timeout)
+            LOG.debug("call %r (%r)", " ".join(args), timeout)
+        cmd = [str(self._adb_bin), *args]
         if not self.connected and cmd[1] not in ("connect", "devices", "disconnect"):
             raise ADBCommunicationError("ADB session is not connected!")
         ret_code, output = self._call_adb(cmd, timeout=timeout)
@@ -339,7 +351,7 @@ class ADBSession:
             if not self.connected:
                 if self._ip_addr is not None:
                     addr = ":".join((self._ip_addr, str(self._port)))
-                    LOG.debug("connecting to %s", addr)
+                    LOG.debug("connecting to '%s'", addr)
                     if self.call(["connect", addr], timeout=30)[0] != 0:
                         LOG.warning("connection attempt #%d failed", attempt)
                         sleep(retry_delay)
@@ -512,7 +524,7 @@ class ADBSession:
         if status == "Enforcing":
             return True
         if status != "Permissive":
-            LOG.warning("Unexpected SELinux state '%r'", status)
+            LOG.warning("Unexpected SELinux state '%s'", status)
         return False
 
     @classmethod
@@ -538,7 +550,7 @@ class ADBSession:
         """Retrieve process ID for the process with the specified package name.
 
         Args:
-            apk_name: APK to to retrieve the package name from.
+            package_name: Package name to use to find process PID.
 
         Returns:
             PID of the process with the specified package name if it exists or None.
@@ -862,7 +874,7 @@ class ADBSession:
             package_name: Name of package.
 
         Returns:
-            Path containing symbols on the local machine.
+            Location of symbols on the local machine.
         """
         return self.symbols.get(package_name, "")
 

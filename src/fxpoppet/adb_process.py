@@ -29,7 +29,6 @@ __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
 
 
-# Note: This was taken from FFPuppet.
 @unique
 class Reason(Enum):
     """Indicates why the browser process was terminated"""
@@ -47,6 +46,20 @@ class ADBLaunchError(ADBSessionError):
 
 
 class ADBProcess:
+    """ADB Process management.
+
+    Attributes:
+        _launches: Number of successful browser launches.
+        _package: Package used as target process.
+        _pid: Process ID of current target process.
+        _profile_template: Profile used as a template.
+        _session: Current ADB session.
+        _working_path: Working directory on the remote device.
+        logs: Location of logs on the local machine.
+        profile: Location of profile on the remote device.
+        reason: Indicates why the browser process was terminated.
+    """
+
     # TODO:
     #  def save_logs(self, *args, **kwargs):
     #  def clone_log(self, log_id, offset=0):
@@ -72,22 +85,15 @@ class ADBProcess:
         assert package_name
         if not session.is_installed(package_name):
             raise ADBSessionError(f"Package {package_name!r} is not installed")
-        # number of successful browser launches
         self._launches = 0
-        # package to use as target process
         self._package = package_name
-        # pid of current target process
         self._pid: int | None = None
-        # profile that is used as a template
         self._profile_template = use_profile
-        # ADB session with device
         self._session = session
         # Note: geckview_example fails to read a profile from /sdcard/ atm
-        # self._working_path = "/sdcard/ADBProc_%08X" % (getrandbits(32),)
         self._working_path = DEVICE_TMP / f"ADBProc_{getrandbits(32):08X}"
         # self._sanitizer_logs = "%s/sanitizer_logs" % (self._working_path,)
         self.logs: Path | None = None
-        # profile path on device
         self.profile: PurePosixPath | None = None
         self.reason: Reason | None = Reason.CLOSED
 
