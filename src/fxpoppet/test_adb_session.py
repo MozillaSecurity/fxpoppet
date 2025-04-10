@@ -12,6 +12,7 @@ from .adb_session import (
     DEVICE_TMP,
     ADBCommandError,
     ADBCommunicationError,
+    ADBResult,
     ADBSession,
     ADBSessionError,
     _get_android_sdk,
@@ -34,13 +35,13 @@ def test_adb_session_01(mocker, result):
         autospec=True,
         side_effect=result,
     )
-    retcode, output = ADBSession._call_adb(["test"])
+    adb_result = ADBSession._call_adb(["test"])
     if isinstance(result, TimeoutExpired):
-        assert retcode == 1
-        assert output == ""
+        assert adb_result.exit_code == 1
+        assert adb_result.output == ""
     else:
-        assert retcode == 0
-        assert output == "test"
+        assert adb_result.exit_code == 0
+        assert adb_result.output == "test"
 
 
 @mark.parametrize(
@@ -50,31 +51,36 @@ def test_adb_session_01(mocker, result):
         (None, "ADB session is not connected!", ADBCommunicationError, False),
         # invalid command
         (
-            (1, "Android Debug Bridge version"),
+            ADBResult(1, "Android Debug Bridge version"),
             "Invalid ADB command 'test'",
             ADBCommandError,
             True,
         ),
         # invalid command
-        ((1, "adb: usage:"), "adb: usage:", ADBCommandError, True),
-        # disconnected device
-        ((1, "error: closed"), "No device detected!", ADBCommunicationError, True),
+        (ADBResult(1, "adb: usage:"), "adb: usage:", ADBCommandError, True),
         # disconnected device
         (
-            (1, "error: device offline"),
+            ADBResult(1, "error: closed"),
             "No device detected!",
             ADBCommunicationError,
             True,
         ),
         # disconnected device
         (
-            (1, "error: no devices/emulators found"),
+            ADBResult(1, "error: device offline"),
+            "No device detected!",
+            ADBCommunicationError,
+            True,
+        ),
+        # disconnected device
+        (
+            ADBResult(1, "error: no devices/emulators found"),
             "No device detected!",
             ADBCommunicationError,
             True,
         ),
         # success
-        ((0, "pass"), None, None, True),
+        (ADBResult(0, "pass"), None, None, True),
     ],
 )
 @mark.usefixtures("tmp_session_adb_check")
@@ -85,7 +91,9 @@ def test_adb_session_02(mocker, ret, msg, exc, connected):
     session.connected = connected
     if exc is None:
         session._debug_adb = False
-        assert session.call(["test"]) == (0, "pass")
+        result = session.call(["test"])
+        assert result.exit_code == 0
+        assert result.output == "pass"
     else:
         session._debug_adb = True
         with raises(exc, match=msg):
@@ -123,7 +131,7 @@ def test_adb_session_05(mocker):
     def fake_adb_01(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "devices":
-            return 1, ""
+            return ADBResult(1, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch(
@@ -136,7 +144,7 @@ def test_adb_session_05(mocker):
     def fake_adb_02(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "devices":
-            return (
+            return ADBResult(
                 0,
                 "List of devices attached\n"
                 "emulator-5554   device\n"
@@ -156,7 +164,7 @@ def test_adb_session_05(mocker):
     def fake_adb_03(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "devices":
-            return (
+            return ADBResult(
                 0,
                 "List of devices attached\n"
                 "* daemon not running; starting now at tcp:5037\n"
@@ -194,26 +202,26 @@ def test_adb_session_06(mocker):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
             assert cmd[2] == ":".join([test_ip, str(test_port)])
-            return 0, ""
+            return ADBResult(0, "")
         # already Permissive
         if cmd[1] == "shell":
             # strip shell args
             cmd.remove("-T")
             cmd.remove("-n")
             if cmd[2] == "getenforce":
-                return 0, "Permissive"
+                return ADBResult(0, "Permissive")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "ro.build.version.release":
-                    return 0, test_version
+                    return ADBResult(0, test_version)
                 if cmd[3] == "ro.product.cpu.abi":
-                    return 0, test_arch
+                    return ADBResult(0, test_arch)
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
             # already root
             if cmd[2] == "whoami":
-                return 0, "root"
+                return ADBResult(0, "root")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch(
@@ -245,52 +253,52 @@ def test_adb_session_07(mocker):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
             if obj.connected:
-                return 0, "already connected"
+                return ADBResult(0, "already connected")
             assert cmd[2] == ":".join([test_ip, str(test_port)])
             obj.connected = True
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "disconnect":
             if not obj.connected:
-                return 0, "already disconnected"
+                return ADBResult(0, "already disconnected")
             assert cmd[2] == ":".join([test_ip, str(test_port)])
             obj.connected = False
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "reconnect":
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "root":
             obj._root = True
             obj.connected = False
-            return 0, "restarting adbd as root"
+            return ADBResult(0, "restarting adbd as root")
         if cmd[1] == "shell":
             # strip shell args
             cmd.remove("-T")
             cmd.remove("-n")
             if cmd[2] == "getenforce":
                 if test_enforcing:
-                    return 0, "Enforcing"
-                return 0, "Permissive"
+                    return ADBResult(0, "Enforcing")
+                return ADBResult(0, "Permissive")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "ro.build.version.release":
-                    return 0, test_version
+                    return ADBResult(0, test_version)
                 if cmd[3] == "ro.product.cpu.abi":
-                    return 0, test_arch
+                    return ADBResult(0, test_arch)
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
             if cmd[2] == "setenforce":
                 test_enforcing = False
-                return 0, ""
+                return ADBResult(0, "")
             if cmd[2] in ("start", "stop"):
-                return 0, ""
+                return ADBResult(0, "")
             if cmd[2] == "whoami":
                 if obj._root:
-                    return 0, "root"
-                return 0, "shell"
+                    return ADBResult(0, "root")
+                return ADBResult(0, "shell")
         if cmd[1] == "unroot":
             obj._root = False
             obj.connected = False
-            return 0, "restarting adbd as non root"
+            return ADBResult(0, "restarting adbd as non root")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
@@ -319,12 +327,12 @@ def test_adb_session_08(mocker):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
             obj.connected = True
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "disconnect":
             obj.connected = False
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "devices":
-            return (
+            return ADBResult(
                 0,
                 "List of devices attached\n"
                 "* daemon not running; starting now at tcp:5037\n"
@@ -336,18 +344,18 @@ def test_adb_session_08(mocker):
             cmd.remove("-T")
             cmd.remove("-n")
             if cmd[2] == "getenforce":
-                return 0, "Permissive"
+                return ADBResult(0, "Permissive")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "ro.build.version.release":
-                    return 0, test_version
+                    return ADBResult(0, test_version)
                 if cmd[3] == "ro.product.cpu.abi":
-                    return 0, test_arch
+                    return ADBResult(0, test_arch)
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
             if cmd[2] == "whoami":
-                return 0, "shell"
+                return ADBResult(0, "shell")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
@@ -373,9 +381,9 @@ def test_adb_session_09(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
-            return 1, "unable to connect"
+            return ADBResult(1, "unable to connect")
         if cmd[1] == "devices":
-            return (
+            return ADBResult(
                 0,
                 "List of devices attached\n"
                 "* daemon not running; starting now at tcp:5037\n"
@@ -400,20 +408,20 @@ def test_adb_session_10(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "devices":
-            return 0, "\n"
+            return ADBResult(0, "\n")
         if cmd[1] == "shell":
             # strip shell args
             cmd.remove("-T")
             cmd.remove("-n")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
             if cmd[2] == "whoami":
-                return 1, ""
+                return ADBResult(1, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -432,11 +440,11 @@ def test_adb_session_11(mocker):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
             if obj.connected:
-                return 0, "already connected"
+                return ADBResult(0, "already connected")
             obj.connected = True
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "devices":
-            return (
+            return ADBResult(
                 0,
                 "List of devices attached\n"
                 "* daemon not running; starting now at tcp:5037\n"
@@ -445,36 +453,36 @@ def test_adb_session_11(mocker):
             )
         if cmd[1] == "disconnect":
             if not obj.connected:
-                return 0, "already disconnected"
+                return ADBResult(0, "already disconnected")
             obj.connected = False
-            return 0, ""
+            return ADBResult(0, "")
         if cmd[1] == "root":
             obj._root = True
             obj.connected = False
-            return 0, "restarting adbd as root"
+            return ADBResult(0, "restarting adbd as root")
         if cmd[1] == "shell":
             # strip shell args
             cmd.remove("-T")
             cmd.remove("-n")
             if cmd[2] == "getenforce":
-                return 0, "Permissive"
+                return ADBResult(0, "Permissive")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "ro.build.version.release":
-                    return 0, "9"
+                    return ADBResult(0, "9")
                 if cmd[3] == "ro.product.cpu.abi":
-                    return 0, "x86_64"
+                    return ADBResult(0, "x86_64")
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
             if cmd[2] == "whoami":
                 if obj._root:
-                    return 0, "root"
-                return 0, "shell"
+                    return ADBResult(0, "root")
+                return ADBResult(0, "shell")
         if cmd[1] == "unroot":
             obj._root = False
             obj.connected = False
-            return 0, "restarting adbd as non root"
+            return ADBResult(0, "restarting adbd as non root")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", autospec=True)
@@ -516,9 +524,9 @@ def test_adb_session_12(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
-            return 1, "unable to connect"
+            return ADBResult(1, "unable to connect")
         if cmd[1] == "disconnect":
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -537,7 +545,7 @@ def test_adb_session_13(mocker):
     """test ADBSession.all() with unknown command"""
     mocker.patch(
         "fxpoppet.adb_session.ADBSession._call_adb",
-        return_value=(1, "Android Debug Bridge version 1.0.XX"),
+        return_value=ADBResult(1, "Android Debug Bridge version 1.0.XX"),
     )
     session = ADBSession("127.0.0.1")
     session.connected = True
@@ -564,8 +572,8 @@ def test_adb_session_14(tmp_path, mocker):
             assert cmd[2] == "-g"
             assert cmd[3] == "-r"
             if "test.apk" in cmd[4]:
-                return 0, "Success"
-            return 1, ""
+                return ADBResult(0, "Success")
+            return ADBResult(1, "")
         if cmd[1] == "shell":
             # strip shell args
             cmd.remove("-T")
@@ -573,7 +581,7 @@ def test_adb_session_14(tmp_path, mocker):
             assert cmd[2] == "pm"
             assert cmd[3] == "grant"
             assert cmd[4] == "test-package.blah.foo"
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -617,7 +625,7 @@ def test_adb_session_15(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "uninstall" and cmd[2] == "org.test.preinstalled":
-            return 0, "Success"
+            return ADBResult(0, "Success")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch(
@@ -643,8 +651,8 @@ def test_adb_session_16(mocker):
             cmd.remove("-n")
             if cmd[2] == "pidof":
                 if cmd[3] == "org.test.preinstalled":
-                    return 0, "1337"
-                return 1, ""
+                    return ADBResult(0, "1337")
+                return ADBResult(1, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -670,7 +678,7 @@ def test_adb_session_17(mocker):
             if cmd[2] == "pm":
                 assert cmd[3] == "list"
                 assert cmd[4] == "packages"
-                return (
+                return ADBResult(
                     0,
                     "package:org.mozilla.fennec_aurora\n"
                     "package:org.test.preinstalled\n"
@@ -700,7 +708,7 @@ def test_adb_session_18(mocker):
             if cmd[2] == "pm":
                 assert cmd[3] == "list"
                 assert cmd[4] == "packages"
-                return (
+                return ADBResult(
                     0,
                     "package:org.mozilla.fennec_aurora\n"
                     "package:org.test.preinstalled\n"
@@ -753,7 +761,7 @@ def test_adb_session_19(mocker):
                     "07-27 12:39:27.286  2767  7142 I fake log",
                     "07-27 12:39:27.441  7128  7128 I fake log",
                 ]
-            return 0, "\n".join(output)
+            return ADBResult(0, "\n".join(output))
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -781,7 +789,7 @@ def test_adb_session_20(mocker):
         if cmd[1] == "shell" and cmd[2] == "lsof":
             if len(cmd) == 5:
                 assert cmd[3].startswith("-p")
-            return (
+            return ADBResult(
                 0,
                 "COMMAND     PID    USER   FD      TYPE   DEVICE  SIZE/OFF"
                 "       NODE NAME\n"
@@ -837,7 +845,7 @@ def test_adb_session_20(mocker):
         if cmd[1] == "shell" and cmd[2] == "ps":
             assert "--ppid" in cmd
             assert "9990" in cmd
-            return (
+            return ADBResult(
                 0,
                 "PID   PPID  RSS  NAME\n9991  9990  3331 org.mozilla.fennec_aurora\n",
             )
@@ -888,7 +896,7 @@ def test_adb_session_21(mocker):
                 ]
             elif ppid == 9990:
                 output.append("9991  9990  3332   org.mozilla.fennec_aurora\n")
-            return 0, "".join(output)
+            return ADBResult(0, "".join(output))
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -910,7 +918,7 @@ def test_adb_session_22(tmp_path, mocker):
         if cmd[1] == "push":
             assert "test.txt" in cmd[2]
             assert cmd[3] == "dst"
-            return 0, " pushed. "
+            return ADBResult(0, " pushed. ")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -933,7 +941,7 @@ def test_adb_session_23(mocker):
         if cmd[1] == "pull":
             assert cmd[2] == "src"
             assert cmd[3] == "dst"
-            return 0, " pulled. "
+            return ADBResult(0, " pulled. ")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -951,7 +959,7 @@ def test_adb_session_24(mocker):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "logcat":
             assert cmd[2] == "--clear"
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -974,8 +982,8 @@ def test_adb_session_25(mocker):
             if cmd[2] == "ls":
                 assert cmd[3] == "-A"
                 if cmd[4] == "missing-dir":
-                    return 1, ""
-                return 0, "test"
+                    return ADBResult(1, "")
+                return ADBResult(0, "test")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -1001,7 +1009,7 @@ def test_adb_session_26(mocker):
             cmd.remove("-n")
             if cmd[2] == "ps":
                 assert "9990" in cmd
-                return 0, "PID\n9990\n\n"
+                return ADBResult(0, "PID\n9990\n\n")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -1107,10 +1115,14 @@ def test_adb_session_29(mocker, tmp_path):
 @mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_30(mocker):
     """test ADBSession.get_enforce()"""
-    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=(0, "Enforcing"))
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, "Enforcing")
+    )
     session = ADBSession("127.0.0.1")
     assert session.get_enforce()
-    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=(0, "Blah"))
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, "Blah")
+    )
     session = ADBSession("127.0.0.1")
     assert not session.get_enforce()
 
@@ -1145,8 +1157,8 @@ def test_adb_session_32(mocker):
             cmd.remove("-n")
             if cmd[2] == "realpath":
                 if cmd[3] == "missing/path":
-                    return 1, ""
-                return 0, "existing/path"
+                    return ADBResult(1, "")
+                return ADBResult(0, "existing/path")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch(
@@ -1168,21 +1180,13 @@ def test_adb_session_33(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "reverse":
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
     session = ADBSession("127.0.0.1")
     session.connected = True
     assert session.reverse(1234, 1235)
-    with raises(AssertionError):
-        session.reverse(1, 1235)
-    with raises(AssertionError):
-        session.reverse(1234, 1)
-    with raises(AssertionError):
-        session.reverse(65536, 1235)
-    with raises(AssertionError):
-        session.reverse(1234, 65536)
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -1199,7 +1203,7 @@ def test_adb_session_34(mocker):
                 pass
             else:
                 raise AssertionError(f"unexpected command {cmd!r}")
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch(
@@ -1231,19 +1235,19 @@ def test_adb_session_35(mocker):
                 if cmd[3] == "get":
                     assert cmd[4] == "global"
                     assert cmd[5] == "airplane_mode_on"
-                    return 0, "1"
+                    return ADBResult(0, "1")
                 if cmd[3] == "put":
                     assert cmd[4] == "global"
                     assert cmd[5] == "airplane_mode_on"
                     assert cmd[6] in "01"
-                    return 0, ""
+                    return ADBResult(0, "")
             if cmd[2] == "su":
                 assert cmd[3] == "root"
                 assert cmd[4] == "am"
                 assert cmd[5] == "broadcast"
                 assert cmd[6] == "-a"
                 assert cmd[7] == "android.intent.action.AIRPLANE_MODE"
-                return 0, ""
+                return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -1269,9 +1273,9 @@ def test_adb_session_36(mocker):
             cmd.remove("-n")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, ""
+                    return ADBResult(0, "")
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "0"
+                    return ADBResult(0, "0")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     ADBSession._call_adb = fake_adb_01
@@ -1289,9 +1293,9 @@ def test_adb_session_36(mocker):
             cmd.remove("-n")
             if cmd[2] == "getprop":
                 if cmd[3] == "init.svc.bootanim":
-                    return 0, "stopped"
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "sys.boot_completed":
-                    return 0, "1"
+                    return ADBResult(0, "1")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     ADBSession._call_adb = fake_adb_02
@@ -1317,13 +1321,13 @@ def test_adb_session_36(mocker):
                 if cmd[3] == "init.svc.bootanim":
                     if not anim_done:
                         anim_done = True
-                        return 0, ""
-                    return 0, "stopped"
+                        return ADBResult(0, "")
+                    return ADBResult(0, "stopped")
                 if cmd[3] == "sys.boot_completed":
                     if not boot_done:
                         boot_done = True
-                        return 0, "0"
-                    return 0, "1"
+                        return ADBResult(0, "0")
+                    return ADBResult(0, "1")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     ADBSession._call_adb = fake_adb_03
@@ -1341,7 +1345,7 @@ def test_adb_session_37(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "reboot":
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -1360,7 +1364,7 @@ def test_adb_session_38(mocker):
     def fake_adb_01(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "remount":
-            return 0, "Permission denied"
+            return ADBResult(0, "Permission denied")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_01)
@@ -1374,7 +1378,7 @@ def test_adb_session_38(mocker):
     def fake_adb_02(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "remount":
-            return 0, ""
+            return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_02)

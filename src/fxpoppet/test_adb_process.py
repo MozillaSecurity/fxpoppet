@@ -8,7 +8,7 @@ from shutil import rmtree
 from pytest import mark, raises
 
 from .adb_process import ADBLaunchError, ADBProcess, Reason
-from .adb_session import ADBSession, ADBSessionError
+from .adb_session import ADBResult, ADBSession, ADBSessionError
 
 
 def test_adb_process_01(mocker):
@@ -96,7 +96,7 @@ def test_adb_process_07(mocker, env):
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = (0, "Status: ok")
+    fake_session.shell.return_value = ADBResult(0, "Status: ok")
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1337)
     fake_session.listdir.return_value = ()
@@ -122,7 +122,7 @@ def test_adb_process_08(mocker):
     fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = (0, "Status: ok")
+    fake_session.shell.return_value = ADBResult(0, "Status: ok")
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1337)
     fake_session.open_files.return_value = ((1, "some_file"),)

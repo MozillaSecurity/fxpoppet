@@ -284,7 +284,10 @@ class ADBProcess:
                 "-d",
                 bootstrapper.location,
             ]
-            if "Status: ok" not in self._session.shell(cmd, timeout=launch_timeout)[1]:
+            if (
+                "Status: ok"
+                not in self._session.shell(cmd, timeout=launch_timeout).output
+            ):
                 raise ADBLaunchError(f"Could not launch {self._package!r}")
             self._pid = self._session.get_pid(self._package)
             bootstrapper.wait(self.is_healthy, url=url)
