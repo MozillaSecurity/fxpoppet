@@ -367,7 +367,7 @@ class ADBSession:
             attempt += 1
             if not self.connected:
                 if self._ip_addr is not None:
-                    addr = ":".join((self._ip_addr, str(self._port)))
+                    addr = f"{self._ip_addr}:{self._port}"
                     LOG.debug("connecting to '%s'", addr)
                     if self.call(["connect", addr], timeout=30).exit_code != 0:
                         LOG.warning("connection attempt #%d failed", attempt)
@@ -523,9 +523,7 @@ class ADBSession:
             except ADBCommandError:
                 LOG.warning("'unroot' not support by ADB")
         elif self._ip_addr is not None:
-            self.call(
-                ["disconnect", ":".join((self._ip_addr, str(self._port)))], timeout=30
-            )
+            self.call(["disconnect", f"{self._ip_addr}:{self._port}"], timeout=30)
         self.connected = False
 
     def get_enforce(self) -> bool:

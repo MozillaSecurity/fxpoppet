@@ -239,9 +239,7 @@ class ADBProcess:
             # create location to store sanitizer logs
             # self._session.shell(["mkdir", "-p", self._sanitizer_logs])
             # create empty profile
-            self.profile = PurePosixPath(
-                f"{self._working_path}/gv_profile_{getrandbits(32):08X}"
-            )
+            self.profile = self._working_path / f"gv_profile_{getrandbits(32):08X}"
             self._session.shell(["mkdir", "-p", str(self.profile)])
             # add environment variables
             env_mod = dict(env_mod or {})
@@ -520,8 +518,7 @@ class ADBProcess:
                 break
             if wait_end <= time():
                 LOG.debug(
-                    "Timeout waiting for: %s",
-                    ", ".join(x for x in open_files if x in files),
+                    "Timeout waiting for: %s", ", ".join(files.intersection(open_files))
                 )
                 return False
             sleep(poll_rate)
