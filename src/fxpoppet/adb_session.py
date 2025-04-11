@@ -87,6 +87,7 @@ class ADBSession:
         _ip_addr: Target device IP address.
         _os_version: Android version string.
         _port: ADB listening port.
+        _root: Connected as root user.
         connected: ADB connection state.
         symbols: Location of symbols on the local machine.
     """
@@ -204,15 +205,15 @@ class ADBSession:
     def _get_procs(
         self, pid: int | None = None, pid_children: int | None = None
     ) -> Generator[DeviceProcessInfo]:
-        """Generator function that yields a DeviceProcessInfo object for each running
-        process by default. pid and pid_children can be used to filter the results.
+        """Provides a DeviceProcessInfo object for each process running on the connected
+        device by default. pid and pid_children can be used to filter the results.
 
         Args:
             pid: Process ID to include in lookup.
             pid_children: Used to lookup the children of the given PID.
 
         Yields:
-            DeviceProcessInfo: One instance for each process found in lookup.
+            Process information.
         """
         cmd = ["ps", "-o", "pid,ppid,rss,name"]
         if pid is not None:
@@ -313,7 +314,7 @@ class ADBSession:
             None
 
         Returns:
-
+            True if logs were cleared otherwise False.
         """
         return self.call(["logcat", "--clear"], timeout=10).exit_code == 0
 
@@ -325,7 +326,7 @@ class ADBSession:
                  processes will be collected.
 
         Returns:
-
+            Logcat output.
         """
         LOG.debug("collect_logs()")
         if not self.connected:
@@ -710,7 +711,7 @@ class ADBSession:
                     yield line[8:]
 
     def process_exists(self, pid: int) -> bool:
-        """Check if a process with a PID matching pid exists on the connected device.
+        """Check if a process with a matching pid exists on the connected device.
 
         Args:
             pid: Process ID to lookup
@@ -812,11 +813,11 @@ class ADBSession:
         """
 
         Args:
-            remote: Port to bind to on remote device
-            local: Port to bind to on local machine
+            remote: Port to bind to on connected device.
+            local: Port to bind to on local machine.
 
         Returns:
-            True if successful otherwise False
+            True if successful otherwise False.
         """
         assert 1024 < local < 0x10000
         assert 1024 < remote < 0x10000
@@ -827,10 +828,10 @@ class ADBSession:
         """
 
         Args:
-            remote: Port to unbind from on remote device
+            remote: Port to unbind from on connected device.
 
         Returns:
-            True if successful otherwise False
+            True if successful otherwise False.
         """
         cmd = ["reverse"]
         if remote is not None:

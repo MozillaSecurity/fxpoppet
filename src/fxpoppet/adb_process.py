@@ -54,9 +54,9 @@ class ADBProcess:
         _pid: Process ID of current target process.
         _profile_template: Profile used as a template.
         _session: Current ADB session.
-        _working_path: Working directory on the remote device.
+        _working_path: Working directory on the connected device.
         logs: Location of logs on the local machine.
-        profile: Location of profile on the remote device.
+        profile: Location of profile on the connected device.
         reason: Indicates why the browser process was terminated.
     """
 
