@@ -1,28 +1,35 @@
 """Launch an Android Emulator on a free port."""
 
-import argparse
-import logging
-import os
-import platform
-import shutil
-import socket
-import subprocess
-import telnetlib
-import tempfile
-import time
-import xml.etree.ElementTree
+from argparse import ArgumentParser
+from logging import DEBUG, INFO, basicConfig, getLogger
+from os import environ, getenv
 from pathlib import Path
+from platform import system
+from shutil import copy, rmtree
+from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
+from subprocess import DEVNULL, Popen, TimeoutExpired, check_output
+from telnetlib import Telnet
+from tempfile import TemporaryDirectory
+from time import sleep
 from urllib.parse import urlparse
+from xml.etree.ElementTree import (
+    Element,
+    SubElement,
+    fromstring,
+    parse,
+    register_namespace,
+    tostring,
+)
 
 from fuzzfetch.download import download_url, get_url, iec
 from fuzzfetch.extract import extract_zip
 
 __author__ = "Jesse Schwartzentruber"
 
-EXE_SUFFIX = ".exe" if platform.system() == "Windows" else ""
+EXE_SUFFIX = ".exe" if system() == "Windows" else ""
 REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
 IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
-LOG = logging.getLogger("bearspray.android")
+LOG = getLogger(__name__)
 SYS_IMG = "android-35"
 WORKING_DIR = Path.home() / "fxpoppet-emulator"
 
@@ -36,15 +43,15 @@ def init_logging(debug=False):
     Returns:
         None
     """
-    if debug or os.environ.get("DEBUG", "1"):
+    if debug or getenv("DEBUG") == "1":
         date_fmt = None
         log_fmt = "%(asctime)s %(levelname).1s %(name)s | %(message)s"
-        log_level = logging.DEBUG
+        log_level = DEBUG
     else:
         date_fmt = "%Y-%m-%d %H:%M:%S"
         log_fmt = "[%(asctime)s] %(message)s"
-        log_level = logging.INFO
-    logging.basicConfig(format=log_fmt, datefmt=date_fmt, level=log_level)
+        log_level = INFO
+    basicConfig(format=log_fmt, datefmt=date_fmt, level=log_level)
 
 
 class AndroidPaths:
@@ -81,16 +88,16 @@ class AndroidPaths:
             Path: value of ANDROID_SDK_ROOT
         """
         if self._sdk_root is None:
-            if os.getenv("ANDROID_HOME") is not None:
-                android_home = Path(os.getenv("ANDROID_HOME"))
+            if getenv("ANDROID_HOME") is not None:
+                android_home = Path(getenv("ANDROID_HOME"))
                 if self._is_valid_sdk(android_home):
                     self._sdk_root = android_home
                     return android_home
-            if os.getenv("ANDROID_SDK_ROOT") is not None:
-                self._sdk_root = Path(os.getenv("ANDROID_SDK_ROOT"))
-            elif platform.system() == "Windows":
-                self._sdk_root = Path(os.getenv("LOCALAPPDATA")) / "Android" / "sdk"
-            elif platform.system() == "Darwin":
+            if getenv("ANDROID_SDK_ROOT") is not None:
+                self._sdk_root = Path(getenv("ANDROID_SDK_ROOT"))
+            elif system() == "Windows":
+                self._sdk_root = Path(getenv("LOCALAPPDATA")) / "Android" / "sdk"
+            elif system() == "Darwin":
                 self._sdk_root = Path.home() / "Library" / "Android" / "sdk"
             else:
                 self._sdk_root = Path.home() / "Android" / "Sdk"
@@ -107,10 +114,10 @@ class AndroidPaths:
             Path: value of ANDROID_PREFS_ROOT
         """
         if self._prefs_root is None:
-            if os.getenv("ANDROID_PREFS_ROOT") is not None:
-                self._prefs_root = Path(os.getenv("ANDROID_PREFS_ROOT"))
-            elif os.getenv("ANDROID_SDK_HOME") is not None:
-                self._prefs_root = Path(os.getenv("ANDROID_SDK_HOME"))
+            if getenv("ANDROID_PREFS_ROOT") is not None:
+                self._prefs_root = Path(getenv("ANDROID_PREFS_ROOT"))
+            elif getenv("ANDROID_SDK_HOME") is not None:
+                self._prefs_root = Path(getenv("ANDROID_SDK_HOME"))
             else:
                 self._prefs_root = Path.home()
         return self._prefs_root
@@ -126,8 +133,8 @@ class AndroidPaths:
             Path: value of ANDROID_EMULATOR_HOME
         """
         if self._emulator_home is None:
-            if os.getenv("ANDROID_EMULATOR_HOME") is not None:
-                self._emulator_home = Path(os.getenv("ANDROID_EMULATOR_HOME"))
+            if getenv("ANDROID_EMULATOR_HOME") is not None:
+                self._emulator_home = Path(getenv("ANDROID_EMULATOR_HOME"))
             else:
                 self._emulator_home = self.prefs_root / ".android"
         return self._emulator_home
@@ -143,8 +150,8 @@ class AndroidPaths:
             Path: value of ANDROID_AVD_HOME
         """
         if self._avd_home is None:
-            if os.getenv("ANDROID_AVD_HOME") is not None:
-                self._avd_home = Path(os.getenv("ANDROID_AVD_HOME"))
+            if getenv("ANDROID_AVD_HOME") is not None:
+                self._avd_home = Path(getenv("ANDROID_AVD_HOME"))
             else:
                 self._avd_home = self.emulator_home / "avd"
         return self._avd_home
@@ -168,15 +175,15 @@ class AndroidSDKRepo:
         )
         xml_string = get_url(url).content
         LOG.info("Downloaded manifest: %s (%sB)", url, iec(len(xml_string)))
-        self.root = xml.etree.ElementTree.fromstring(xml_string)
-        if platform.system() == "Linux":
+        self.root = fromstring(xml_string)
+        if system() == "Linux":
             self.host = "linux"
-        elif platform.system() == "Windows":
+        elif system() == "Windows":
             self.host = "windows"
-        elif platform.system() == "Darwin":
+        elif system() == "Darwin":
             self.host = "darwin"
         else:
-            raise RuntimeError(f"Unknown platform: '{platform.system()}'")
+            raise RuntimeError(f"Unknown platform: '{system()}'")
 
     @staticmethod
     def read_revision(element):
@@ -242,9 +249,7 @@ class AndroidSDKRepo:
         if manifest_path.is_file():
             # compare the remote version with local
             remote_rev = self.read_revision(package)
-            local_rev = self.read_revision(
-                xml.etree.ElementTree.parse(manifest_path).find("localPackage")
-            )
+            local_rev = self.read_revision(parse(manifest_path).find("localPackage"))
             if remote_rev <= local_rev:
                 fmt_rev = ".".join(
                     "" if ver is None else f"{ver:d}" for ver in local_rev
@@ -256,33 +261,28 @@ class AndroidSDKRepo:
                 )
                 return
 
-        tmp_fp, ziptmp = tempfile.mkstemp(suffix=".zip")
-        os.close(tmp_fp)
-        try:
-            download_url(self.url_base + "/" + url.text, ziptmp)
-            extract_zip(ziptmp, str(out_path))
-        finally:
-            os.unlink(ziptmp)
+        with TemporaryDirectory() as dl_dir:
+            zip_tmp = Path(dl_dir) / "package.zip"
+            download_url(f"{self.url_base}/{url.text}", zip_tmp)
+            extract_zip(zip_tmp, str(out_path))
 
         # write manifest
-        xml.etree.ElementTree.register_namespace(
+        register_namespace(
             "common", "http://schemas.android.com/repository/android/common/01"
         )
-        xml.etree.ElementTree.register_namespace(
+        register_namespace(
             "generic", "http://schemas.android.com/repository/android/generic/01"
         )
-        xml.etree.ElementTree.register_namespace(
+        register_namespace(
             "sys-img", "http://schemas.android.com/sdk/android/repo/sys-img2/01"
         )
-        xml.etree.ElementTree.register_namespace(
-            "xsi", "http://www.w3.org/2001/XMLSchema-instance"
-        )
-        manifest = xml.etree.ElementTree.Element(
+        register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+        manifest = Element(
             "{http://schemas.android.com/repository/android/common/01}repository"
         )
         license_ = package.find("uses-license")
         manifest.append(self.root.find(f"./license[@id='{license_.get('ref')}']"))
-        local_package = xml.etree.ElementTree.SubElement(manifest, "localPackage")
+        local_package = SubElement(manifest, "localPackage")
         local_package.set("path", package_path)
         local_package.set("obsolete", "false")
         local_package.append(package.find("type-details"))
@@ -294,7 +294,7 @@ class AndroidSDKRepo:
             local_package.append(deps)
         manifest_bytes = (
             b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            + xml.etree.ElementTree.tostring(manifest, encoding="UTF-8")
+            + tostring(manifest, encoding="UTF-8")
         )
         # etree doesn't support xmlns in attribute values, so insert them manually
         if b"xmlns:generic=" not in manifest_bytes and b'"generic:' in manifest_bytes:
@@ -317,9 +317,9 @@ class AndroidSDKRepo:
 
 
 def _is_free(port):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock = socket(AF_INET, SOCK_STREAM)
     try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         sock.settimeout(0.05)
         sock.bind(("localhost", port))
         sock.listen(5)
@@ -402,35 +402,31 @@ class AndroidEmulator:
             if sdcard_fb.is_file():
                 if sdcard.is_file():
                     sdcard.unlink()
-                shutil.copy(str(sdcard_fb), str(sdcard))
+                copy(sdcard_fb, sdcard)
 
         args.extend(("-port", f"{self.port:d}"))
         args.append(f"@{self.avd_name}")
 
-        output = (
-            None
-            if logging.getLogger().getEffectiveLevel() == logging.DEBUG
-            else subprocess.DEVNULL
-        )
+        output = None if getLogger().getEffectiveLevel() == DEBUG else DEVNULL
 
         # make a copy before we modify the passed env dictionary
         env = dict(env or {})
-        if platform.system() == "Linux":
-            if "DISPLAY" in os.environ:
-                env["DISPLAY"] = os.environ["DISPLAY"]
-            if "XAUTHORITY" in os.environ:
-                env["XAUTHORITY"] = os.environ["XAUTHORITY"]
+        if system() == "Linux":
+            if "DISPLAY" in environ:
+                env["DISPLAY"] = getenv("DISPLAY")
+            if "XAUTHORITY" in environ:
+                env["XAUTHORITY"] = getenv("XAUTHORITY")
         env["ANDROID_AVD_HOME"] = str(PATHS.avd_home)
 
         LOG.info("Launching Android emulator with snapshot=%s", self.snapshot)
-        emu = subprocess.Popen(  # pylint: disable=consider-using-with
+        emu = Popen(  # pylint: disable=consider-using-with
             [str(PATHS.sdk_root / "emulator" / f"emulator{EXE_SUFFIX}"), *args],
             env=env,
             stderr=output,
             stdout=output,
         )
         try:
-            time.sleep(5)
+            sleep(5)
         except Exception:
             if emu.poll() is None:
                 emu.terminate()
@@ -440,7 +436,7 @@ class AndroidEmulator:
             raise AndroidEmulatorError("Failed to launch emulator")
 
         try:
-            subprocess.check_output(
+            check_output(
                 [
                     str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
                     "wait-for-device",
@@ -450,7 +446,7 @@ class AndroidEmulator:
                 timeout=boot_timeout,
                 env={"ANDROID_SERIAL": f"emulator-{self.port:d}"},
             )
-        except subprocess.TimeoutExpired:
+        except TimeoutExpired:
             emu.terminate()
             emu.wait()
             raise AndroidEmulatorError("Emulator failed to boot in time.") from None
@@ -567,10 +563,10 @@ class AndroidEmulator:
         result = self.emu.wait(timeout=timeout)
 
         if self.snapshot == "save":
-            time.sleep(5)
-            shutil.copy(
-                str(PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img"),
-                str(PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img.firstboot"),
+            sleep(5)
+            copy(
+                PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img",
+                PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img.firstboot",
             )
 
         return result
@@ -585,7 +581,7 @@ class AndroidEmulator:
             None
         """
         LOG.info("Initiating emulator shutdown")
-        ctl = telnetlib.Telnet("localhost", self.port)
+        ctl = Telnet("localhost", self.port)
 
         lines = ctl.read_until(b"OK\r\n", 10).rstrip().splitlines()
         try:
@@ -648,7 +644,7 @@ class AndroidEmulator:
             avd_ini.unlink()
         avd_dir = PATHS.avd_home / (avd_name + ".avd")
         if avd_dir.is_dir():
-            shutil.rmtree(str(avd_dir))
+            rmtree(avd_dir)
 
     @classmethod
     def create_avd(cls, avd_name, sdcard_size=500):
@@ -729,11 +725,11 @@ class AndroidEmulator:
             print("vm.heapSize=256", file=cfg)
 
         if (api_gapi / "x86_64" / "userdata.img").exists():
-            shutil.copy(str(api_gapi / "x86_64" / "userdata.img"), str(avd_dir))
+            copy(api_gapi / "x86_64" / "userdata.img", avd_dir)
 
         sdcard = avd_dir / "sdcard.img"
-        subprocess.check_output([str(mksd_path), f"{sdcard_size:d}M", str(sdcard)])
-        shutil.copy(str(sdcard), str(sdcard) + ".firstboot")
+        check_output([str(mksd_path), f"{sdcard_size:d}M", str(sdcard)])
+        copy(sdcard, f"{sdcard}.firstboot")
 
 
 def main(args=None):
@@ -745,7 +741,7 @@ def main(args=None):
     Returns:
         None
     """
-    aparser = argparse.ArgumentParser(prog="python -m bearspray.android")
+    aparser = ArgumentParser(prog="python -m bearspray.android")
     aparser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
