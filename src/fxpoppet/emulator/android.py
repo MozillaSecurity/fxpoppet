@@ -170,9 +170,7 @@ class AndroidSDKRepo:
             url (str): SDK repo URL.
         """
         parts = urlparse(url)
-        self.url_base = (
-            parts.scheme + "://" + parts.netloc + parts.path.rsplit("/", 1)[0]
-        )
+        self.url_base = f"{parts.scheme}://{parts.netloc}{parts.path.rsplit('/', 1)[0]}"
         xml_string = get_url(url).content
         LOG.info("Downloaded manifest: %s (%sB)", url, iec(len(xml_string)))
         self.root = fromstring(xml_string)
@@ -375,7 +373,7 @@ class AndroidEmulator:
 
         assert self.snapshot in {"never", "save", "load"}
 
-        avd_dir = PATHS.avd_home / (self.avd_name + ".avd")
+        avd_dir = PATHS.avd_home / f"{self.avd_name}.avd"
 
         args = []
         args.append("-writable-system")
@@ -565,8 +563,8 @@ class AndroidEmulator:
         if self.snapshot == "save":
             sleep(5)
             copy(
-                PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img",
-                PATHS.avd_home / (self.avd_name + ".avd") / "sdcard.img.firstboot",
+                PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img",
+                PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img.firstboot",
             )
 
         return result
@@ -639,10 +637,10 @@ class AndroidEmulator:
         Returns:
             None
         """
-        avd_ini = PATHS.avd_home / (avd_name + ".ini")
+        avd_ini = PATHS.avd_home / f"{avd_name}.ini"
         if avd_ini.is_file():
             avd_ini.unlink()
-        avd_dir = PATHS.avd_home / (avd_name + ".avd")
+        avd_dir = PATHS.avd_home / f"{avd_name}.avd"
         if avd_dir.is_dir():
             rmtree(avd_dir)
 
@@ -665,23 +663,23 @@ class AndroidEmulator:
         PATHS.avd_home.mkdir(exist_ok=True)
         api_gapi = PATHS.sdk_root / "system-images" / SYS_IMG / "default"
         cls.remove_avd(avd_name)
-        avd_ini = PATHS.avd_home / (avd_name + ".ini")
-        avd_dir = PATHS.avd_home / (avd_name + ".avd")
+        avd_ini = PATHS.avd_home / f"{avd_name}.ini"
+        avd_dir = PATHS.avd_home / f"{avd_name}.avd"
         avd_dir.mkdir()
 
         with avd_ini.open("w") as ini:
             print("avd.ini.encoding=UTF-8", file=ini)
-            print("path=" + str(avd_dir), file=ini)
-            print("path.rel=avd/" + avd_name + ".avd", file=ini)
-            print("target=" + SYS_IMG, file=ini)
+            print(f"path={avd_dir}", file=ini)
+            print(f"path.rel=avd/{avd_name}.avd", file=ini)
+            print("target={SYS_IMG}", file=ini)
 
         avd_cfg = avd_dir / "config.ini"
         assert not avd_cfg.is_file(), f"File exists '{avd_cfg}'"
         with avd_cfg.open("w") as cfg:
-            print("AvdId=" + avd_name, file=cfg)
+            print(f"AvdId={avd_name}", file=cfg)
             print("PlayStore.enabled=false", file=cfg)
             print("abi.type=x86_64", file=cfg)
-            print("avd.ini.displayname=" + avd_name, file=cfg)
+            print(f"avd.ini.displayname={avd_name}", file=cfg)
             print("avd.ini.encoding=UTF-8", file=cfg)
             print("disk.dataPartition.size=5000M", file=cfg)
             print("fastboot.forceColdBoot=no", file=cfg)
