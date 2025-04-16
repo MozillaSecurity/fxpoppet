@@ -17,15 +17,34 @@ from urllib.parse import urlparse
 from fuzzfetch.download import download_url, get_url, iec
 from fuzzfetch.extract import extract_zip
 
-from . import config
-from .utils import EXE_SUFFIX, checkbool, init_logging, retry
-
 __author__ = "Jesse Schwartzentruber"
 
+EXE_SUFFIX = ".exe" if platform.system() == "Windows" else ""
 REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
 IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
 LOG = logging.getLogger("bearspray.android")
 SYS_IMG = "android-35"
+WORKING_DIR = Path.home() / "fxpoppet-emulator"
+
+
+def init_logging(debug=False):
+    """Initialize logging format and level.
+
+    Args:
+        debug (bool): Enable debug logging.
+
+    Returns:
+        None
+    """
+    if debug or os.environ.get("DEBUG", "1"):
+        date_fmt = None
+        log_fmt = "%(asctime)s %(levelname).1s %(name)s | %(message)s"
+        log_level = logging.DEBUG
+    else:
+        date_fmt = "%Y-%m-%d %H:%M:%S"
+        log_fmt = "[%(asctime)s] %(message)s"
+        log_level = logging.INFO
+    logging.basicConfig(format=log_fmt, datefmt=date_fmt, level=log_level)
 
 
 class AndroidPaths:
@@ -131,7 +150,7 @@ class AndroidPaths:
         return self._avd_home
 
 
-PATHS = AndroidPaths(avd_home=config.WORKING_DIR / "avd")
+PATHS = AndroidPaths(avd_home=WORKING_DIR / "avd")
 
 
 class AndroidSDKRepo:
@@ -321,11 +340,6 @@ class AndroidEmulator:
 
     DESC = "Android emulator"
 
-    @retry(
-        msg="Android emulator launch failed",
-        errors=(AndroidEmulatorError,),
-        delay=range(2, 10),
-    )
     def __init__(
         self,
         avd_name="x86",
@@ -760,9 +774,6 @@ def main(args=None):
         aparser.error("--boot-timeout must be positive")
     if args.boot_timeout == 0:
         args.boot_timeout = None
-
-    if checkbool(os.environ, "DEBUG"):
-        args.verbose = True
 
     init_logging(debug=args.verbose)
 
