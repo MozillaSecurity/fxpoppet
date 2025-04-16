@@ -1,5 +1,7 @@
 """Launch an Android Emulator on a free port."""
 
+from __future__ import annotations
+
 from argparse import ArgumentParser
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
@@ -34,11 +36,11 @@ SYS_IMG = "android-35"
 WORKING_DIR = Path.home() / "fxpoppet-emulator"
 
 
-def init_logging(debug=False):
+def init_logging(debug: bool = False) -> None:
     """Initialize logging format and level.
 
     Args:
-        debug (bool): Enable debug logging.
+        debug: Enable debug logging.
 
     Returns:
         None
@@ -58,45 +60,49 @@ class AndroidPaths:
     """Helper to lookup Android SDK paths"""
 
     def __init__(
-        self, sdk_root=None, prefs_root=None, emulator_home=None, avd_home=None
-    ):
+        self,
+        sdk_root: Path | None = None,
+        prefs_root: Path | None = None,
+        emulator_home: Path | None = None,
+        avd_home: Path | None = None,
+    ) -> None:
         """Initialize an AndroidPaths object.
 
         Args:
-            sdk_root (Path/None): default ANDROID_SDK_ROOT value
-            prefs_root (Path/None): default ANDROID_PREFS_ROOT value
-            emulator_home (Path/None): default ANDROID_EMULATOR_HOME value
-            avd_home (Path/None): default ANDROID_AVD_HOME value
+            sdk_root: default ANDROID_SDK_ROOT value
+            prefs_root: default ANDROID_PREFS_ROOT value
+            emulator_home: default ANDROID_EMULATOR_HOME value
+            avd_home: default ANDROID_AVD_HOME value
         """
         self._sdk_root = sdk_root
         self._prefs_root = prefs_root
         self._emulator_home = emulator_home
         self._avd_home = avd_home
 
-    @staticmethod
-    def _is_valid_sdk(path):
-        return path.is_dir()
-
     @property
-    def sdk_root(self):
+    def sdk_root(self) -> Path:
         """Look up ANDROID_SDK_ROOT
 
         Args:
             None
 
         Returns:
-            Path: value of ANDROID_SDK_ROOT
+            value of ANDROID_SDK_ROOT
         """
         if self._sdk_root is None:
-            if getenv("ANDROID_HOME") is not None:
-                android_home = Path(getenv("ANDROID_HOME"))
-                if self._is_valid_sdk(android_home):
+            env_var = getenv("ANDROID_HOME")
+            if env_var is not None:
+                android_home = Path(env_var)
+                if android_home.is_dir():
                     self._sdk_root = android_home
                     return android_home
-            if getenv("ANDROID_SDK_ROOT") is not None:
-                self._sdk_root = Path(getenv("ANDROID_SDK_ROOT"))
+            env_var = getenv("ANDROID_SDK_ROOT")
+            if env_var is not None:
+                self._sdk_root = Path(env_var)
             elif system() == "Windows":
-                self._sdk_root = Path(getenv("LOCALAPPDATA")) / "Android" / "sdk"
+                env_var = getenv("LOCALAPPDATA")
+                assert env_var is not None
+                self._sdk_root = Path(env_var) / "Android" / "sdk"
             elif system() == "Darwin":
                 self._sdk_root = Path.home() / "Library" / "Android" / "sdk"
             else:
@@ -104,56 +110,56 @@ class AndroidPaths:
         return self._sdk_root
 
     @property
-    def prefs_root(self):
+    def prefs_root(self) -> Path:
         """Look up ANDROID_PREFS_ROOT.
 
         Args:
             None
 
         Returns:
-            Path: value of ANDROID_PREFS_ROOT
+            value of ANDROID_PREFS_ROOT
         """
         if self._prefs_root is None:
-            if getenv("ANDROID_PREFS_ROOT") is not None:
-                self._prefs_root = Path(getenv("ANDROID_PREFS_ROOT"))
-            elif getenv("ANDROID_SDK_HOME") is not None:
-                self._prefs_root = Path(getenv("ANDROID_SDK_HOME"))
+            env_var = getenv("ANDROID_PREFS_ROOT")
+            if env_var is not None:
+                self._prefs_root = Path(env_var)
             else:
-                self._prefs_root = Path.home()
+                env_var = getenv("ANDROID_SDK_HOME")
+                self._prefs_root = Path.home() if env_var is None else Path(env_var)
         return self._prefs_root
 
     @property
-    def emulator_home(self):
+    def emulator_home(self) -> Path:
         """Look up ANDROID_EMULATOR_HOME
 
         Args:
             None
 
         Returns:
-            Path: value of ANDROID_EMULATOR_HOME
+            value of ANDROID_EMULATOR_HOME
         """
         if self._emulator_home is None:
-            if getenv("ANDROID_EMULATOR_HOME") is not None:
-                self._emulator_home = Path(getenv("ANDROID_EMULATOR_HOME"))
-            else:
-                self._emulator_home = self.prefs_root / ".android"
+            env_var = getenv("ANDROID_EMULATOR_HOME")
+            self._emulator_home = (
+                self.prefs_root / ".android" if env_var is None else Path(env_var)
+            )
         return self._emulator_home
 
     @property
-    def avd_home(self):
+    def avd_home(self) -> Path:
         """Look up ANDROID_AVD_HOME
 
         Args:
             None
 
         Returns:
-            Path: value of ANDROID_AVD_HOME
+            value of ANDROID_AVD_HOME
         """
         if self._avd_home is None:
-            if getenv("ANDROID_AVD_HOME") is not None:
-                self._avd_home = Path(getenv("ANDROID_AVD_HOME"))
-            else:
-                self._avd_home = self.emulator_home / "avd"
+            env_var = getenv("ANDROID_AVD_HOME")
+            self._avd_home = (
+                self.emulator_home / "avd" if env_var is None else Path(env_var)
+            )
         return self._avd_home
 
 
@@ -163,11 +169,11 @@ PATHS = AndroidPaths(avd_home=WORKING_DIR / "avd")
 class AndroidSDKRepo:
     """Android SDK repository"""
 
-    def __init__(self, url):
+    def __init__(self, url: str) -> None:
         """Create an AndroidSDKRepo object.
 
         Args:
-            url (str): SDK repo URL.
+            url: SDK repo URL.
         """
         parts = urlparse(url)
         self.url_base = f"{parts.scheme}://{parts.netloc}{parts.path.rsplit('/', 1)[0]}"
@@ -184,36 +190,39 @@ class AndroidSDKRepo:
             raise RuntimeError(f"Unknown platform: '{system()}'")
 
     @staticmethod
-    def read_revision(element):
+    def read_revision(element: Element) -> tuple[int, int, int]:
         """Look for revision in an SDK package element.
 
         Args:
-            element (Element): Package element to find revision for.
+            element: Package element to find revision for.
 
         Returns:
-            tuple(int, int, int): Major, minor, micro
+            Major, minor, micro
         """
         rev = element.find("revision")
-        major = rev.find("major")
-        major = int(major.text) if major is not None else None
-        minor = rev.find("minor")
-        minor = int(minor.text) if minor is not None else None
-        micro = rev.find("micro")
-        micro = int(micro.text) if micro is not None else None
+        if rev is None:
+            raise RuntimeError("Revision not found")
+        value = rev.find("major")
+        major = int(value.text) if value is not None and value.text is not None else 0
+        value = rev.find("minor")
+        minor = int(value.text) if value is not None and value.text is not None else 0
+        value = rev.find("micro")
+        micro = int(value.text) if value is not None and value.text is not None else 0
         return (major, minor, micro)
 
-    def get_file(self, package_path, out_path, extract_package_path=True):
+    def get_file(
+        self, package_path: str, out_path: Path, extract_package_path: bool = True
+    ) -> None:
         """Install an Android SDK package.
 
         Args:
-            package_path (str): xref for package in SDK XML manifest.
-            out_path (Path): Local path to extract package to.
-            extract_package_path (bool): Extract under package name from `package_path`
+            package_path: xref for package in SDK XML manifest.
+            out_path: Local path to extract package to.
+            extract_package_path: Extract under package name from `package_path`.
 
         Returns:
             None
         """
-        package = None
         for package in self.root.findall(
             f".//remotePackage[@path='{package_path}']/channelRef[@ref='channel-0']/.."
         ):
@@ -247,7 +256,11 @@ class AndroidSDKRepo:
         if manifest_path.is_file():
             # compare the remote version with local
             remote_rev = self.read_revision(package)
-            local_rev = self.read_revision(parse(manifest_path).find("localPackage"))
+            tree = parse(manifest_path)
+            assert tree is not None
+            rev_element = tree.find("localPackage")
+            assert rev_element is not None
+            local_rev = self.read_revision(rev_element)
             if remote_rev <= local_rev:
                 fmt_rev = ".".join(
                     "" if ver is None else f"{ver:d}" for ver in local_rev
@@ -279,13 +292,18 @@ class AndroidSDKRepo:
             "{http://schemas.android.com/repository/android/common/01}repository"
         )
         license_ = package.find("uses-license")
-        manifest.append(self.root.find(f"./license[@id='{license_.get('ref')}']"))
+        assert license_ is not None
+        element = self.root.find(f"./license[@id='{license_.get('ref')}']")
+        assert element is not None
+        manifest.append(element)
         local_package = SubElement(manifest, "localPackage")
         local_package.set("path", package_path)
         local_package.set("obsolete", "false")
-        local_package.append(package.find("type-details"))
-        local_package.append(package.find("revision"))
-        local_package.append(package.find("display-name"))
+        for entry in ("type-details", "revision", "display-name"):
+            element = package.find(entry)
+            # this assertion was added maintain exact functionality and satisfy mypy
+            assert element is not None
+            local_package.append(element)
         local_package.append(license_)
         deps = package.find("dependencies")
         if deps is not None:
@@ -314,19 +332,18 @@ class AndroidSDKRepo:
         manifest_path.write_bytes(manifest_bytes)
 
 
-def _is_free(port):
+def _is_free(port: int) -> bool:
     sock = socket(AF_INET, SOCK_STREAM)
     try:
         sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         sock.settimeout(0.05)
         sock.bind(("localhost", port))
-        sock.listen(5)
+        sock.listen()
         return True
     except OSError:
         return False
     finally:
-        if sock is not None:
-            sock.close()
+        sock.close()
 
 
 class AndroidEmulatorError(Exception):
@@ -340,27 +357,27 @@ class AndroidEmulator:
 
     def __init__(
         self,
-        avd_name="x86",
-        port=5554,
-        snapshot="never",
-        env=None,
-        headless=False,
-        target=None,
-        verbose=False,
-        boot_timeout=120,
-    ):
+        avd_name: str = "x86",
+        port: int = 5554,
+        snapshot: str = "never",
+        env: dict[str, str] | None = None,
+        headless: bool = False,
+        target: str | None = None,
+        verbose: bool = False,
+        boot_timeout: int | None = 120,
+    ) -> None:
         """Create an AndroidEmulator object.
 
         Args:
-            avd_name (str): AVD machine definition name.
-            port (int): ADB control port for emulator to use.
-            snapshot (str): One of "never", "save", or "load". Determines snapshot
-                            loading of emulator.
-            env (dict): Environment variables to pass to emulator subprocess.
-            headless (bool): Use -no-window to launch emulator.
-            target (str): The target name (from builds.json).
-            verbose (bool): Enable verbose logging.
-            boot_timeout (float/None): Time to wait for Android to boot in the emulator.
+            avd_name: AVD machine definition name.
+            port: ADB control port for emulator to use.
+            snapshot: One of "never", "save", or "load". Determines snapshot
+                      loading of emulator.
+            env: Environment variables to pass to emulator subprocess.
+            headless: Use -no-window to launch emulator.
+            target: The target name (from builds.json).
+            verbose: Enable verbose logging.
+            boot_timeout: Time to wait for Android to boot in the emulator.
         """
         self.avd_name = avd_name
         self.emu = None
@@ -411,9 +428,9 @@ class AndroidEmulator:
         env = dict(env or {})
         if system() == "Linux":
             if "DISPLAY" in environ:
-                env["DISPLAY"] = getenv("DISPLAY")
+                env["DISPLAY"] = getenv("DISPLAY", "")
             if "XAUTHORITY" in environ:
-                env["XAUTHORITY"] = getenv("XAUTHORITY")
+                env["XAUTHORITY"] = getenv("XAUTHORITY", "")
         env["ANDROID_AVD_HOME"] = str(PATHS.avd_home)
 
         LOG.info("Launching Android emulator with snapshot=%s", self.snapshot)
@@ -456,7 +473,7 @@ class AndroidEmulator:
         self.emu = emu
         self.pid = emu.pid
 
-    def relaunch(self):
+    def relaunch(self) -> AndroidEmulator:
         """Create a new AndroidEmulator object created with the same parameters used to
         create this one.
 
@@ -477,7 +494,7 @@ class AndroidEmulator:
         )
 
     @staticmethod
-    def install():
+    def install() -> None:
         """Ensure the emulator and system-image are installed.
 
         Args:
@@ -498,10 +515,7 @@ class AndroidEmulator:
         sdk_repo.get_file("emulator", PATHS.sdk_root)
 
         # get latest Google APIs system image
-        img_repo.get_file(
-            f"system-images;{SYS_IMG};default;x86_64",
-            PATHS.sdk_root,
-        )
+        img_repo.get_file(f"system-images;{SYS_IMG};default;x86_64", PATHS.sdk_root)
 
         # get latest platform-tools for linux
         sdk_repo.get_file("platform-tools", PATHS.sdk_root)
@@ -515,7 +529,7 @@ class AndroidEmulator:
         # PANIC: Cannot find AVD system path. Please define ANDROID_SDK_ROOT
         (PATHS.sdk_root / "platforms").mkdir(exist_ok=True)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Cleanup any process files on disk.
 
         Args:
@@ -526,7 +540,7 @@ class AndroidEmulator:
         """
         self.remove_avd(self.avd_name)
 
-    def terminate(self):
+    def terminate(self) -> None:
         """Terminate the emulator process.
 
         Args:
@@ -535,29 +549,32 @@ class AndroidEmulator:
         Returns:
             None
         """
+        assert self.emu is not None
         return self.emu.terminate()
 
-    def poll(self):
+    def poll(self) -> int | None:
         """Poll emulator process for exit status.
 
         Args:
             None
 
         Returns:
-            int/None: exit status of emulator process (None if still running).
+            Exit status of emulator process (None if still running).
         """
+        assert self.emu is not None
         return self.emu.poll()
 
-    def wait(self, timeout=None):
+    def wait(self, timeout: int | None = None) -> int | None:
         """Wait for emulator process to exit.
 
         Args:
-            timeout (int/None): If process does not exit within `timeout` seconds, raise
-                                subprocess.TimeoutExpired.
+            timeout: If process does not exit within `timeout` seconds, raise
+                     subprocess.TimeoutExpired.
 
         Returns:
-            int/None: exit status of emulator process (None if still running).
+            Exit status of emulator process (None if still running).
         """
+        assert self.emu is not None
         result = self.emu.wait(timeout=timeout)
 
         if self.snapshot == "save":
@@ -569,7 +586,7 @@ class AndroidEmulator:
 
         return result
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Use the emulator control channel to request clean shutdown.
 
         Args:
@@ -599,18 +616,18 @@ class AndroidEmulator:
         ctl.close()
 
     @staticmethod
-    def search_free_ports(search_port=None):
+    def search_free_ports(search_port: int | None = None) -> int:
         """Search for a pair of adjacent free ports for use by the Android Emulator.
         The emulator uses two ports: one as a QEMU control channel, and the other for
         ADB.
 
         Args:
-            search_port (int/None): The first port to try. Ports are attempted
-                                    sequentially upwards. The default if None is given
-                                    is 5554 (the usual ADB port).
+            search_port: The first port to try. Ports are attempted sequentially
+                         upwards. The default if None is given is 5554 (the usual ADB
+                         port).
 
         Returns:
-            int: The lower port of a pair of two unused ports.
+            The lower port of a pair of two unused ports.
         """
         port = search_port or 5554
 
@@ -627,12 +644,12 @@ class AndroidEmulator:
         raise AndroidEmulatorError("no open range could be found")
 
     @staticmethod
-    def remove_avd(avd_name):
+    def remove_avd(avd_name: str) -> None:
         """Remove an Android emulator machine definition (AVD). No error is raised if
         the AVD doesn't exist.
 
         Args:
-            avd_name (str): Name of AVD to remove.
+            avd_name: Name of AVD to remove.
 
         Returns:
             None
@@ -645,12 +662,12 @@ class AndroidEmulator:
             rmtree(avd_dir)
 
     @classmethod
-    def create_avd(cls, avd_name, sdcard_size=500):
+    def create_avd(cls, avd_name: str, sdcard_size: int = 500) -> None:
         """Create an Android emulator machine definition (AVD).
 
         Args:
-            avd_name (str): Name of AVD to create.
-            sdcard_size (int): Size of SD card image to use, in megabytes.
+            avd_name: Name of AVD to create.
+            sdcard_size: Size of SD card image to use, in megabytes.
 
         Returns:
             None
@@ -730,11 +747,11 @@ class AndroidEmulator:
         copy(sdcard, f"{sdcard}.firstboot")
 
 
-def main(args=None):
+def main(argv: list[str] | None = None) -> None:
     """Create and run an AVD and delete it when shutdown.
 
     Args:
-        args (list/None): Override sys.argv (for testing).
+        argv (list/None): Override sys.argv (for testing).
 
     Returns:
         None
@@ -762,7 +779,7 @@ def main(args=None):
         action="store_true",
         help="Skip download/update the Android SDK and system image",
     )
-    args = aparser.parse_args(args)
+    args = aparser.parse_args(argv)
 
     if args.boot_timeout < 0:
         aparser.error("--boot-timeout must be positive")
