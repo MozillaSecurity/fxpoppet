@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 # pylint: disable=protected-access
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from shutil import rmtree
 
 from pytest import mark, raises
@@ -182,38 +182,52 @@ def test_adb_process_10(mocker, tmp_path):
     assert any(dmp_path.glob("fake.txt"))
 
 
-@mark.skip(reason="code broken")
 def test_adb_process_11(mocker, tmp_path):
     """test ADBProcess._process_logs()"""
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
+    mocker.patch("fxpoppet.adb_process.getenv", autospec=True, return_value="1")
+    log_tmp = tmp_path / "log_tmp"
     mocker.patch(
         "fxpoppet.adb_process.mkdtemp",
         autospec=True,
-        return_value=str(tmp_path),
+        return_value=str(log_tmp),
     )
-    mocker.patch("fxpoppet.adb_process.PuppetLogger", autospec=True)
-    fake_proc_md = mocker.patch("fxpoppet.adb_process.MinidumpParser", autospec=True)
+
+    def _fake_pull(src, _dst):
+        (log_tmp / "unprocessed" / src.name).touch()
+
+    fake_mdp = mocker.patch("fxpoppet.adb_process.MinidumpParser", autospec=True)
+    fake_mdp.dmp_files.return_value = [log_tmp / "log.dmp"]
+    fake_mdp.return_value.__enter__.return_value.create_log.return_value = (
+        log_tmp / "unprocessed" / "log.dmp"
+    )
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.collect_logs.return_value = "fake logcat data"
-    fake_session.symbols_path.return_value = "foo"
+    fake_session.pull.side_effect = _fake_pull
+    profile = tmp_path / "profile"
+    profile.mkdir()
     with ADBProcess("org.some.app", fake_session) as proc:
+        proc.profile = profile
+        log_tmp.mkdir()
         # no extra logs
         proc._process_logs([])
+        assert proc.logs is not None
         assert (proc.logs / "log_logcat.txt").is_file()
+        # reset log dir
         rmtree(proc.logs)
         proc.logs = None
-        assert fake_proc_md.call_count == 0
+        log_tmp.mkdir()
+        assert fake_mdp.call_count == 0
         assert fake_session.pull.call_count == 0
         # other logs available
-        (tmp_path / "unprocessed").mkdir(parents=True)
-        (tmp_path / "unprocessed" / "log.dmp").touch()
-        (tmp_path / "unprocessed" / "asan_log.dmp").touch()
-        proc._process_logs(["log.dmp", "asan_log.txt"])
+        proc._process_logs([Path("log.dmp"), Path("asan_log.txt")])
         assert proc.logs.is_dir()
         assert (proc.logs / "log_logcat.txt").is_file()
-        rmtree(proc.logs)
-        assert fake_proc_md.call_count == 1
+        # dmp is copied but name is incorrect because if the need to patch
+        assert (proc.logs / "log.dmp").is_file()
+        assert fake_mdp.call_count == 1
         assert fake_session.pull.call_count == 2
+        assert fake_mdp.return_value.__enter__.return_value.create_log.call_count == 1
 
 
 def test_adb_process_12(tmp_path):

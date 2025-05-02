@@ -113,7 +113,7 @@ class ADBSession:
         self._port: int | None = None
         self._root = False
         self.connected = False
-        self.symbols: dict[str, str] = {}
+        self.symbols: dict[str, Path] = {}
 
         if ip_addr is not None:
             LOG.debug("creating IP based session")
@@ -888,17 +888,6 @@ class ADBSession:
         """
         assert cmd
         return self.call(["shell", "-T", "-n", *cmd], timeout=timeout)
-
-    def symbols_path(self, package_name: str) -> str:
-        """Lookup path containing symbols for a specified package.
-
-        Args:
-            package_name: Name of package.
-
-        Returns:
-            Location of symbols on the local machine.
-        """
-        return self.symbols.get(package_name, "")
 
     def uninstall(self, package: str) -> bool:
         """Uninstall package from the connected device.

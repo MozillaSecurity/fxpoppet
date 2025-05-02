@@ -102,7 +102,7 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
         (None, 1),
     ],
 )
-def test_main_04(mocker, pkg, result):
+def test_main_04(mocker, tmp_path, pkg, result):
     """test main() - launch"""
     mocker.patch("fxpoppet.main.ADBProcess", autospec=True)
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
@@ -110,7 +110,7 @@ def test_main_04(mocker, pkg, result):
     session_obj = session_cls.create.return_value
     args = mocker.Mock(
         airplane_mode=None,
-        launch="fake.apk",
+        launch=tmp_path / "fake.apk",
         install=None,
         ip=None,
         non_root=False,

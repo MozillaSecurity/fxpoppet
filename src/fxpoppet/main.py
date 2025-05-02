@@ -129,6 +129,7 @@ def main(args: Namespace) -> int:
             if pkg_name is None:
                 LOG.error("Failed to lookup package name in '%s'", args.install)
                 return 1
+            session.symbols[pkg_name] = args.launch.parent / "symbols"
             proc = ADBProcess(pkg_name, session)
             try:
                 proc.launch("about:blank", launch_timeout=360)

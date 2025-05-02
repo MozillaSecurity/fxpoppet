@@ -598,8 +598,8 @@ def test_adb_session_14(tmp_path, mocker):
     pkg_file = tmp_path / "package-name.txt"
     apk_file = tmp_path / "bad.apk"
     pkg_file.write_bytes(b"\n")
-    with ZipFile(apk_file, mode="w") as z_out:
-        z_out.write(str(pkg_file), "package-name.txt")
+    with ZipFile(apk_file, mode="w") as zfp:
+        zfp.write(str(pkg_file), "package-name.txt")
     with raises(ADBSessionError):
         session.install(apk_file)
     # good apk
@@ -608,12 +608,9 @@ def test_adb_session_14(tmp_path, mocker):
     syms_path = tmp_path / "symbols"
     syms_path.mkdir()
     pkg_file.write_bytes(b"test-package.blah.foo\n")
-    with ZipFile(apk_file, mode="w") as z_out:
-        z_out.write(str(pkg_file), "package-name.txt")
-    assert not session.symbols_path(apk_file)
+    with ZipFile(apk_file, mode="w") as zfp:
+        zfp.write(str(pkg_file), "package-name.txt")
     assert session.install(apk_file)
-    session.symbols[apk_file] = str(syms_path)
-    assert session.symbols_path(apk_file) == str(syms_path)
     # TODO: failed to get package name
 
 

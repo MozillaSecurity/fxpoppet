@@ -1,12 +1,14 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# pylint: disable=missing-function-docstring
 
 from __future__ import annotations
 
 import re
 from enum import Enum, auto
 from logging import getLogger
+from os import getenv
 from pathlib import Path, PurePosixPath
 from random import getrandbits
 from shutil import copy, rmtree
@@ -41,7 +43,7 @@ class Reason(Enum):
 
 
 class ADBLaunchError(ADBSessionError):
-    pass
+    """Browser launch related error."""
 
 
 class ADBProcess:
@@ -358,8 +360,6 @@ class ADBProcess:
             return
         # TODO: use a common tmp dir
         self.logs = Path(mkdtemp(prefix="mp-logs_"))
-        unprocessed = self.logs / "unprocessed"
-        unprocessed.mkdir()
 
         with (self.logs / "log_logcat.txt").open("w") as log_fp:
             # TODO: should this filter by pid or not?
@@ -370,24 +370,29 @@ class ADBProcess:
             return
 
         # copy crash logs from the device
+        unprocessed = self.logs / "unprocessed"
+        unprocessed.mkdir()
         for fname in crash_reports:
             self._session.pull(fname, unprocessed)
 
-        # TODO: fix
         dmp_files = MinidumpParser.dmp_files(unprocessed)
-        if dmp_files and not MinidumpParser.mdsw_available():
-            LOG.error("Unable to process minidump, minidump-stackwalk is required.")
-
-        # TODO: fix
-        # with PuppetLogger() as logger:
-        #    if any(unprocessed.glob("*.dmp")):
-        #        process_minidumps(
-        #            unprocessed,
-        #            Path(self._session.symbols_path(self._package)),
-        #            logger.add_log,
-        #        )
-        #    logger.close()
-        #    logger.save_logs(self.logs)
+        if dmp_files:
+            if getenv("SAVE_DMP") == "1":
+                for entry in unprocessed.iterdir():
+                    if entry.suffix.lower() in (".dmp", ".extra"):
+                        copy(entry, self.logs)
+            if not MinidumpParser.mdsw_available():
+                LOG.error("Unable to process minidump, minidump-stackwalk is required.")
+                return
+            # process minidump files and save output
+            with MinidumpParser(
+                symbols=self._session.symbols.get(self._package)
+            ) as md_parser:
+                for count, dmp_file in enumerate(dmp_files):
+                    copy(
+                        md_parser.create_log(dmp_file, f"log_minidump_{count:02d}.txt"),
+                        self.logs,
+                    )
 
     def _remove_logs(self) -> None:
         if self.logs is not None and self.logs.is_dir():
