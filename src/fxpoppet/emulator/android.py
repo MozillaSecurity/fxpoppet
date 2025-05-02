@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from contextlib import suppress
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
 from pathlib import Path
@@ -10,7 +11,6 @@ from platform import system
 from shutil import copy, rmtree
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 from subprocess import DEVNULL, Popen, TimeoutExpired, check_output
-from telnetlib import Telnet
 from tempfile import TemporaryDirectory
 from time import sleep
 from urllib.parse import urlparse
@@ -596,24 +596,24 @@ class AndroidEmulator:
             None
         """
         LOG.info("Initiating emulator shutdown")
-        ctl = Telnet("localhost", self.port)
-
-        lines = ctl.read_until(b"OK\r\n", 10).rstrip().splitlines()
-        try:
-            auth_token_idx = lines.index(
-                b"Android Console: you can find your <auth_token> in "
-            )
-        except ValueError:
-            pass
-        else:
-            auth_token_path = lines[auth_token_idx + 1].strip(b"'")
-            with open(auth_token_path, "rb") as auth_token_fp:
-                auth_token = auth_token_fp.read()
-            ctl.write(b"auth " + auth_token + b"\n")
-            ctl.read_until(b"OK\r\n", 10)
-
-        ctl.write(b"kill\n")
-        ctl.close()
+        with suppress(ConnectionResetError), socket(AF_INET, SOCK_STREAM) as sock:
+            sock.connect(("127.0.0.1", self.port))
+            # read connection message
+            lines = sock.recv(65536).splitlines()
+            try:
+                auth_token_idx = lines.index(
+                    b"Android Console: you can find your <auth_token> in "
+                )
+            except ValueError:
+                pass
+            else:
+                auth_token_path = lines[auth_token_idx + 1].strip(b"'")
+                with open(auth_token_path, "rb") as auth_token_fp:
+                    auth_token = auth_token_fp.read()
+                sock.sendall(b"auth " + auth_token + b"\n")
+                # receive auth message
+                _ = sock.recv(65536)
+            sock.sendall(b"kill\n")
 
     @staticmethod
     def search_free_ports(search_port: int | None = None) -> int:
@@ -809,10 +809,13 @@ def main(argv: list[str] | None = None) -> None:
         LOG.info("Android emulator is running on port %d", port)
         try:
             emu.wait()
+        except KeyboardInterrupt:
+            LOG.info("Aborting...")
         finally:
             if emu.poll() is None:
                 emu.shutdown()
-            emu.wait()
+            # this should never timeout
+            emu.wait(timeout=120)
     finally:
         AndroidEmulator.remove_avd(avd_name)
 
