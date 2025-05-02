@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from enum import Enum, auto, unique
+from enum import Enum, auto
 from logging import getLogger
 from pathlib import Path, PurePosixPath
 from random import getrandbits
@@ -29,7 +29,6 @@ __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
 
 
-@unique
 class Reason(Enum):
     """Indicates why the browser process was terminated"""
 
@@ -185,7 +184,7 @@ class ADBProcess:
         launch_timeout: int = 60,
         prefs_js: Path | None = None,
     ) -> bool:
-        LOG.debug("launching %r", url)
+        LOG.debug("launching - url: %s", url)
         assert self._launches > -1, "clean_up() has been called"
         assert self._pid is None, "Process is already running"
         assert self.reason is not None, "Process is already running"
