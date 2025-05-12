@@ -23,7 +23,7 @@ def test_adb_process_01(mocker):
         assert proc.reason == Reason.CLOSED
         assert proc._pid is None
         proc.close()
-        assert not proc.logs  # should not have logs
+        assert not proc.logs
 
 
 def test_adb_process_02(mocker):
@@ -152,7 +152,7 @@ def test_adb_process_09(mocker):
         proc.profile = PurePosixPath("profile_path")
         # no log or minidump files
         fake_session.listdir.return_value = []
-        assert not proc.find_crashreports()
+        assert not any(proc.find_crashreports())
         # contains minidump file
         fake_session.listdir.side_effect = (
             [PurePosixPath("somefile.txt"), PurePosixPath("test.dmp")],
@@ -160,7 +160,7 @@ def test_adb_process_09(mocker):
         assert any(x.name == "test.dmp" for x in proc.find_crashreports())
         # contains missing path
         fake_session.listdir.side_effect = (FileNotFoundError("test"),)
-        assert not proc.find_crashreports()
+        assert not any(proc.find_crashreports())
 
 
 def test_adb_process_10(mocker, tmp_path):

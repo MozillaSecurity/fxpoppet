@@ -84,7 +84,7 @@ def main(args: Namespace) -> int:
     LOG.info("Connecting to device...")
     session = ADBSession.create(args.ip, args.port, as_root=not args.non_root)
     if session is None:
-        LOG.error("Failed to connect to IP:%r port:%d", args.ip, args.port)
+        LOG.error("Failed to connect to IP: %s on port: %d", args.ip, args.port)
         return 1
     try:
         if args.prep is not None:
@@ -111,8 +111,8 @@ def main(args: Namespace) -> int:
                 LOG.error("Failed to lookup package name in '%s'", args.install)
                 return 1
             if session.uninstall(pkg_name):
-                LOG.info("Uninstalled existing %r.", pkg_name)
-            LOG.info("Installing %r from '%s'...", pkg_name, args.install)
+                LOG.info("Uninstalled existing '%s'.", pkg_name)
+            LOG.info("Installing '%s' from '%s'...", pkg_name, args.install)
             package = session.install(args.install)
             if not package:
                 LOG.error("Could not install '%s'", args.install)

@@ -600,7 +600,7 @@ class ADBSession:
         self.shell(
             ["pm", "grant", pkg_name, "android.permission.WRITE_EXTERNAL_STORAGE"]
         )
-        LOG.debug("installed package %r (%s)", pkg_name, apk)
+        LOG.debug("installed package '%s' (%s)", pkg_name, apk)
         return pkg_name
 
     def install_file(
@@ -672,7 +672,7 @@ class ADBSession:
         Yields:
             PID and path of the open file.
         """
-        LOG.debug("open_files(pid=%r, children=%r, files=%r", pid, children, files)
+        LOG.debug("open_files(pid=%r, children=%s, files=%r", pid, children, files)
         cmd = ["lsof"]
         if pid is not None:
             pids = [str(pid)]

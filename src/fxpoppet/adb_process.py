@@ -23,7 +23,7 @@ from yaml import safe_dump
 from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Generator, Iterable, Mapping
 
 LOG = getLogger("adb_process")
 
@@ -62,7 +62,6 @@ class ADBProcess:
     """
 
     # TODO:
-    #  def save_logs(self, *args, **kwargs):
     #  def clone_log(self, log_id, offset=0):
     #  def log_data(self, log_id, offset=0):
     #  def log_length(self, log_id):... likely not going to happen because of overhead
@@ -124,7 +123,7 @@ class ADBProcess:
             LOG.debug("already closed!")
             return
         try:
-            crash_reports = self.find_crashreports()
+            crash_reports = tuple(self.find_crashreports())
             # set reason code
             if crash_reports:
                 self.reason = Reason.ALERT
@@ -151,8 +150,7 @@ class ADBProcess:
         if self.reason is None:
             self.reason = Reason.CLOSED
 
-    def find_crashreports(self) -> list[PurePosixPath]:
-        reports: list[PurePosixPath] = []
+    def find_crashreports(self) -> Generator[PurePosixPath]:
         # look for logs from sanitizers
         # for fname in self._session.listdir(self._sanitizer_logs):
         #    reports.append(os.path.join(self._sanitizer_logs, fname))
@@ -164,15 +162,14 @@ class ADBProcess:
             try:
                 for fname in self._session.listdir(md_path):
                     if fname.suffix in keep_suffix:
-                        reports.append(md_path / fname)  # noqa: PERF401
+                        yield md_path / fname
             except FileNotFoundError:
                 LOG.debug("%s does not exist", md_path)
-        return reports
 
     def is_healthy(self) -> bool:
         if not self.is_running():
             return False
-        return not self.find_crashreports()
+        return not any(self.find_crashreports())
 
     def is_running(self) -> bool:
         if self._pid is None or self.reason is not None:
@@ -353,7 +350,7 @@ class ADBProcess:
                         return None
         return out
 
-    def _process_logs(self, crash_reports: list[PurePosixPath]) -> None:
+    def _process_logs(self, crash_reports: Iterable[PurePosixPath]) -> None:
         assert self.logs is None
         if self.profile is None:
             LOG.debug("no logs to process since browser was not launched")
@@ -486,11 +483,7 @@ class ADBProcess:
                     line = re.sub(rb".+?\s[ADEIVW]\s+", b"", line)
                     o_fp.write(line.split(b": ", 1)[-1])
 
-    def save_logs(
-        self,
-        dst: Path,
-        meta: bool = False,  # pylint: disable=unused-argument
-    ) -> None:
+    def save_logs(self, dst: Path) -> None:
         assert self.reason is not None, "Call close() first!"
         assert self._launches > -1, "clean_up() has been called"
         if self.logs is None:

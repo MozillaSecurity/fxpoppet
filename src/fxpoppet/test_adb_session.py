@@ -201,7 +201,7 @@ def test_adb_session_06(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "connect":
-            assert cmd[2] == ":".join([test_ip, str(test_port)])
+            assert cmd[2] == f"{test_ip}:{test_port}"
             return ADBResult(0, "")
         # already Permissive
         if cmd[1] == "shell":
@@ -254,13 +254,13 @@ def test_adb_session_07(mocker):
         if cmd[1] == "connect":
             if obj.connected:
                 return ADBResult(0, "already connected")
-            assert cmd[2] == ":".join([test_ip, str(test_port)])
+            assert cmd[2] == f"{test_ip}:{test_port}"
             obj.connected = True
             return ADBResult(0, "")
         if cmd[1] == "disconnect":
             if not obj.connected:
                 return ADBResult(0, "already disconnected")
-            assert cmd[2] == ":".join([test_ip, str(test_port)])
+            assert cmd[2] == f"{test_ip}:{test_port}"
             obj.connected = False
             return ADBResult(0, "")
         if cmd[1] == "reconnect":
