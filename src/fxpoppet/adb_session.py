@@ -18,7 +18,7 @@ from time import sleep, time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable, Mapping
+    from collections.abc import Generator, Iterable, Mapping, Sequence
 
 
 LOG = getLogger("adb_session")
@@ -175,7 +175,7 @@ class ADBSession:
         return Path(installed_bin)
 
     @staticmethod
-    def _call_adb(cmd: list[str], timeout: int | None = None) -> ADBResult:
+    def _call_adb(cmd: Sequence[str], timeout: int | None = None) -> ADBResult:
         """Wrapper to make calls to ADB. Launches ADB in a subprocess and collects
         output. If timeout is specified and elapses the ADB subprocess is terminated.
         This function is only meant to be called directly by ADBSession.call().
@@ -268,7 +268,7 @@ class ADBSession:
         )
 
     def call(
-        self, args: list[str], device_required: bool = True, timeout: int = 120
+        self, args: Sequence[str], device_required: bool = True, timeout: int = 120
     ) -> ADBResult:
         """Call ADB with provided arguments.
 
@@ -282,11 +282,10 @@ class ADBSession:
         """
         assert args
         if self._debug_adb:
-            LOG.debug("call %r (%r)", " ".join(args), timeout)
-        cmd = [str(self._adb_bin), *args]
-        if not self.connected and cmd[1] not in ("connect", "devices", "disconnect"):
+            LOG.debug("call '%s' (%d)", " ".join(args), timeout)
+        if not self.connected and args[0] not in ("connect", "devices", "disconnect"):
             raise ADBCommunicationError("ADB session is not connected!")
-        result = self._call_adb(cmd, timeout=timeout)
+        result = self._call_adb((str(self._adb_bin), *args), timeout=timeout)
         if self._debug_adb:
             LOG.debug(
                 "=== adb start ===\n%s\n=== adb end, returned %d ===",
@@ -876,7 +875,7 @@ class ADBSession:
             LOG.warning("set_enforce requires root")
         self.shell(["setenforce", str(value)])
 
-    def shell(self, cmd: list[str], timeout: int = 60) -> ADBResult:
+    def shell(self, cmd: Sequence[str], timeout: int = 60) -> ADBResult:
         """Execute an ADB shell command via a non-interactive shell.
 
         Args:
@@ -887,7 +886,7 @@ class ADBSession:
             The exit code of the ADB call and stderr and stdout.
         """
         assert cmd
-        return self.call(["shell", "-T", "-n", *cmd], timeout=timeout)
+        return self.call(("shell", "-T", "-n", *cmd), timeout=timeout)
 
     def uninstall(self, package: str) -> bool:
         """Uninstall package from the connected device.

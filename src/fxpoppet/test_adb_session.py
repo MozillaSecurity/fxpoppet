@@ -205,22 +205,21 @@ def test_adb_session_06(mocker):
             return ADBResult(0, "")
         # already Permissive
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getenforce":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "ro.build.version.release":
+                if shell_cmd[1] == "ro.build.version.release":
                     return ADBResult(0, test_version)
-                if cmd[3] == "ro.product.cpu.abi":
+                if shell_cmd[1] == "ro.product.cpu.abi":
                     return ADBResult(0, test_arch)
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
             # already root
-            if cmd[2] == "whoami":
+            if shell_cmd[0] == "whoami":
                 return ADBResult(0, "root")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -270,28 +269,27 @@ def test_adb_session_07(mocker):
             obj.connected = False
             return ADBResult(0, "restarting adbd as root")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getenforce":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getenforce":
                 if test_enforcing:
                     return ADBResult(0, "Enforcing")
                 return ADBResult(0, "Permissive")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "ro.build.version.release":
+                if shell_cmd[1] == "ro.build.version.release":
                     return ADBResult(0, test_version)
-                if cmd[3] == "ro.product.cpu.abi":
+                if shell_cmd[1] == "ro.product.cpu.abi":
                     return ADBResult(0, test_arch)
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
-            if cmd[2] == "setenforce":
+            if shell_cmd[0] == "setenforce":
                 test_enforcing = False
                 return ADBResult(0, "")
-            if cmd[2] in ("start", "stop"):
+            if shell_cmd[0] in ("start", "stop"):
                 return ADBResult(0, "")
-            if cmd[2] == "whoami":
+            if shell_cmd[0] == "whoami":
                 if obj._root:
                     return ADBResult(0, "root")
                 return ADBResult(0, "shell")
@@ -340,21 +338,20 @@ def test_adb_session_08(mocker):
                 "emulator-5554   device",
             )
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getenforce":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "ro.build.version.release":
+                if shell_cmd[1] == "ro.build.version.release":
                     return ADBResult(0, test_version)
-                if cmd[3] == "ro.product.cpu.abi":
+                if shell_cmd[1] == "ro.product.cpu.abi":
                     return ADBResult(0, test_arch)
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
-            if cmd[2] == "whoami":
+            if shell_cmd[0] == "whoami":
                 return ADBResult(0, "shell")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -412,15 +409,14 @@ def test_adb_session_10(mocker):
         if cmd[1] == "devices":
             return ADBResult(0, "\n")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
-            if cmd[2] == "whoami":
+            if shell_cmd[0] == "whoami":
                 return ADBResult(1, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -461,24 +457,21 @@ def test_adb_session_11(mocker):
             obj.connected = False
             return ADBResult(0, "restarting adbd as root")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getenforce":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "ro.build.version.release":
+                if shell_cmd[1] == "ro.build.version.release":
                     return ADBResult(0, "9")
-                if cmd[3] == "ro.product.cpu.abi":
+                if shell_cmd[1] == "ro.product.cpu.abi":
                     return ADBResult(0, "x86_64")
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
-            if cmd[2] == "whoami":
-                if obj._root:
-                    return ADBResult(0, "root")
-                return ADBResult(0, "shell")
+            if shell_cmd[0] == "whoami":
+                return ADBResult(0, "root" if obj._root else "shell")
         if cmd[1] == "unroot":
             obj._root = False
             obj.connected = False
@@ -575,12 +568,11 @@ def test_adb_session_14(tmp_path, mocker):
                 return ADBResult(0, "Success")
             return ADBResult(1, "")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            assert cmd[2] == "pm"
-            assert cmd[3] == "grant"
-            assert cmd[4] == "test-package.blah.foo"
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            assert shell_cmd[0] == "pm"
+            assert shell_cmd[1] == "grant"
+            assert shell_cmd[2] == "test-package.blah.foo"
             return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -643,11 +635,10 @@ def test_adb_session_16(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "pidof":
-                if cmd[3] == "org.test.preinstalled":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "pidof":
+                if shell_cmd[1] == "org.test.preinstalled":
                     return ADBResult(0, "1337")
                 return ADBResult(1, "")
         raise AssertionError(f"unexpected command {cmd!r}")
@@ -669,12 +660,11 @@ def test_adb_session_17(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "pm":
-                assert cmd[3] == "list"
-                assert cmd[4] == "packages"
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "pm":
+                assert shell_cmd[1] == "list"
+                assert shell_cmd[2] == "packages"
                 return ADBResult(
                     0,
                     "package:org.mozilla.fennec_aurora\n"
@@ -699,12 +689,11 @@ def test_adb_session_18(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "pm":
-                assert cmd[3] == "list"
-                assert cmd[4] == "packages"
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "pm":
+                assert shell_cmd[1] == "list"
+                assert shell_cmd[2] == "packages"
                 return ADBResult(
                     0,
                     "package:org.mozilla.fennec_aurora\n"
@@ -779,13 +768,13 @@ def test_adb_session_20(mocker):
     # pylint: disable=unused-argument
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
-        if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-        if cmd[1] == "shell" and cmd[2] == "lsof":
-            if len(cmd) == 5:
-                assert cmd[3].startswith("-p")
+        if cmd[1] != "shell":
+            raise AssertionError(f"unexpected command {cmd!r}")
+        # strip "adb shell -n -T"
+        shell_cmd = cmd[4:]
+        if shell_cmd[0] == "lsof":
+            if len(shell_cmd) == 3:
+                assert shell_cmd[1].startswith("-p")
             return ADBResult(
                 0,
                 "COMMAND     PID    USER   FD      TYPE   DEVICE  SIZE/OFF"
@@ -839,9 +828,9 @@ def test_adb_session_20(mocker):
                 "a.fennec_  9990  u0_a80  130u     IPv4                0t0"
                 "      44840 TCP :35274->:443 (SYN_SENT)\n",
             )
-        if cmd[1] == "shell" and cmd[2] == "ps":
-            assert "--ppid" in cmd
-            assert "9990" in cmd
+        if shell_cmd[0] == "ps":
+            assert "--ppid" in shell_cmd
+            assert "9990" in shell_cmd
             return ADBResult(
                 0,
                 "PID   PPID  RSS  NAME\n9991  9990  3331 org.mozilla.fennec_aurora\n",
@@ -871,29 +860,28 @@ def test_adb_session_21(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-        if cmd[1] == "shell" and cmd[2] == "ps":
-            ppid = int(cmd[-1]) if "--ppid" in cmd else None
-            output = ["PID   PPID  RSS  NAME\n"]
-            if ppid is None:
-                output += [
-                    "1     0     2208   /init\n",
-                    "a     a     a      invalid.for.coverage\n",
-                    "1242  2     0      kswapd0\n",
-                    "1337  1772  1024   org.test.preinstalled\n",
-                    "1338  1337  1024   org.test.child\n",
-                    "1772  1     122196 zygote\n",
-                    "2158  1758  0      sdcard\n",
-                    "1773  1     9624   /system/bin/audioserver\n",
-                    "5847  1     2348   /sbin/adbd\n",
-                    "9990  1772  128064 org.mozilla.fennec_aurora\n",
-                    "5944  5847  6280   ps\n",
-                ]
-            elif ppid == 9990:
-                output.append("9991  9990  3332   org.mozilla.fennec_aurora\n")
-            return ADBResult(0, "".join(output))
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "ps":
+                ppid = int(shell_cmd[-1]) if "--ppid" in shell_cmd else None
+                output = ["PID   PPID  RSS  NAME\n"]
+                if ppid is None:
+                    output += [
+                        "1     0     2208   /init\n",
+                        "a     a     a      invalid.for.coverage\n",
+                        "1242  2     0      kswapd0\n",
+                        "1337  1772  1024   org.test.preinstalled\n",
+                        "1338  1337  1024   org.test.child\n",
+                        "1772  1     122196 zygote\n",
+                        "2158  1758  0      sdcard\n",
+                        "1773  1     9624   /system/bin/audioserver\n",
+                        "5847  1     2348   /sbin/adbd\n",
+                        "9990  1772  128064 org.mozilla.fennec_aurora\n",
+                        "5944  5847  6280   ps\n",
+                    ]
+                elif ppid == 9990:
+                    output.append("9991  9990  3332   org.mozilla.fennec_aurora\n")
+                return ADBResult(0, "".join(output))
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=fake_adb_call)
@@ -973,12 +961,11 @@ def test_adb_session_25(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "ls":
-                assert cmd[3] == "-A"
-                if cmd[4] == "missing-dir":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "ls":
+                assert shell_cmd[1] == "-A"
+                if shell_cmd[2] == "missing-dir":
                     return ADBResult(1, "")
                 return ADBResult(0, "test")
         raise AssertionError(f"unexpected command {cmd!r}")
@@ -1001,11 +988,10 @@ def test_adb_session_26(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "ps":
-                assert "9990" in cmd
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "ps":
+                assert "9990" in shell_cmd
                 return ADBResult(0, "PID\n9990\n\n")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -1149,11 +1135,10 @@ def test_adb_session_32(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "realpath":
-                if cmd[3] == "missing/path":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "realpath":
+                if shell_cmd[1] == "missing/path":
                     return ADBResult(1, "")
                 return ADBResult(0, "existing/path")
         raise AssertionError(f"unexpected command {cmd!r}")
@@ -1225,25 +1210,24 @@ def test_adb_session_35(mocker):
     def fake_adb_call(cmd, timeout=None):
         assert cmd and cmd[0].endswith("adb")
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "settings":
-                if cmd[3] == "get":
-                    assert cmd[4] == "global"
-                    assert cmd[5] == "airplane_mode_on"
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "settings":
+                if shell_cmd[1] == "get":
+                    assert shell_cmd[2] == "global"
+                    assert shell_cmd[3] == "airplane_mode_on"
                     return ADBResult(0, "1")
-                if cmd[3] == "put":
-                    assert cmd[4] == "global"
-                    assert cmd[5] == "airplane_mode_on"
-                    assert cmd[6] in "01"
+                if shell_cmd[1] == "put":
+                    assert shell_cmd[2] == "global"
+                    assert shell_cmd[3] == "airplane_mode_on"
+                    assert shell_cmd[4] in "01"
                     return ADBResult(0, "")
-            if cmd[2] == "su":
-                assert cmd[3] == "root"
-                assert cmd[4] == "am"
-                assert cmd[5] == "broadcast"
-                assert cmd[6] == "-a"
-                assert cmd[7] == "android.intent.action.AIRPLANE_MODE"
+            if shell_cmd[0] == "su":
+                assert shell_cmd[1] == "root"
+                assert shell_cmd[2] == "am"
+                assert shell_cmd[3] == "broadcast"
+                assert shell_cmd[4] == "-a"
+                assert shell_cmd[5] == "android.intent.action.AIRPLANE_MODE"
                 return ADBResult(0, "")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -1265,13 +1249,12 @@ def test_adb_session_36(mocker):
     # pylint: disable=unused-argument
     def fake_adb_01(_, cmd, timeout=None):
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "")
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "0")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -1285,13 +1268,12 @@ def test_adb_session_36(mocker):
     # pylint: disable=unused-argument
     def fake_adb_02(_, cmd, timeout=None):
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     return ADBResult(0, "stopped")
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     return ADBResult(0, "1")
         raise AssertionError(f"unexpected command {cmd!r}")
 
@@ -1311,16 +1293,15 @@ def test_adb_session_36(mocker):
         nonlocal anim_done
         nonlocal boot_done
         if cmd[1] == "shell":
-            # strip shell args
-            cmd.remove("-T")
-            cmd.remove("-n")
-            if cmd[2] == "getprop":
-                if cmd[3] == "init.svc.bootanim":
+            # strip "adb shell -n -T"
+            shell_cmd = cmd[4:]
+            if shell_cmd[0] == "getprop":
+                if shell_cmd[1] == "init.svc.bootanim":
                     if not anim_done:
                         anim_done = True
                         return ADBResult(0, "")
                     return ADBResult(0, "stopped")
-                if cmd[3] == "sys.boot_completed":
+                if shell_cmd[1] == "sys.boot_completed":
                     if not boot_done:
                         boot_done = True
                         return ADBResult(0, "0")
