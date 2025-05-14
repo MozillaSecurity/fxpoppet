@@ -1,7 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-# pylint: disable=missing-function-docstring
 
 from __future__ import annotations
 
@@ -104,6 +103,14 @@ class ADBProcess:
         self.cleanup()
 
     def cleanup(self) -> None:
+        """Close running browser instance and remove any related files.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         if self._launches < 0:
             LOG.debug("clean_up() call ignored")
             return
@@ -114,10 +121,26 @@ class ADBProcess:
         self._launches = -1
 
     def clone_log(self) -> str:
+        """Create a copy of existing logs.
+
+        Args:
+            None
+
+        Returns:
+            Log data.
+        """
         # TODO: dump logs for all browser processes
         return self._session.collect_logs(pid=self._pid)
 
     def close(self) -> None:
+        """Close running browser instance.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         assert self._launches > -1, "clean_up() has been called"
         if self.reason is not None:
             LOG.debug("already closed!")
@@ -151,6 +174,14 @@ class ADBProcess:
             self.reason = Reason.CLOSED
 
     def find_crashreports(self) -> Generator[PurePosixPath]:
+        """Scan for crash reports.
+
+        Args:
+            None
+
+        Yields:
+            Crash reports found on the remote device.
+        """
         # look for logs from sanitizers
         # for fname in self._session.listdir(self._sanitizer_logs):
         #    reports.append(os.path.join(self._sanitizer_logs, fname))
@@ -167,11 +198,28 @@ class ADBProcess:
                 LOG.debug("%s does not exist", md_path)
 
     def is_healthy(self) -> bool:
+        """Verify the browser is in a good state by performing a series of checks.
+
+        Args:
+            None
+
+        Returns:
+            True if the browser is running and determined to be in a valid functioning
+            state otherwise False.
+        """
         if not self.is_running():
             return False
         return not any(self.find_crashreports())
 
     def is_running(self) -> bool:
+        """Check if the browser is running.
+
+        Args:
+            None
+
+        Returns:
+            True if the browser is running otherwise False.
+        """
         if self._pid is None or self.reason is not None:
             return False
         return self._session.process_exists(self._pid)
@@ -183,6 +231,19 @@ class ADBProcess:
         launch_timeout: int = 60,
         prefs_js: Path | None = None,
     ) -> bool:
+        """Launch a new browser process.
+
+        Args:
+            url: URL to navigate to after launching the browser.
+            env_mod: Environment modifier. Add, remove and update entries
+                     in the prepared environment. Add and update by
+                     setting value (str) and remove by setting entry value to None.
+            launch_timeout: Timeout in seconds for launching the browser.
+            prefs_js: prefs.js file to install in the Firefox profile.
+
+        Returns:
+            True if the browser was successfully launched otherwise False.
+        """
         LOG.debug("launching - url: %s", url)
         assert self._launches > -1, "clean_up() has been called"
         assert self._pid is None, "Process is already running"
@@ -296,19 +357,27 @@ class ADBProcess:
 
     @property
     def launches(self) -> int:
-        """Get the number of successful launches
+        """Get the number of successful launches.
 
         Args:
             None
 
         Return:
-            Number of successful launches
+            Number of successful launches.
         """
         assert self._launches > -1, "clean_up() has been called"
         return self._launches
 
     @staticmethod
     def prefs_to_dict(src: Path) -> dict[str, bool | int | str] | None:
+        """Convert a prefs.js file to a dictionary.
+
+        Args:
+            None
+
+        Return:
+            Loaded pref values or None if the file cannot be processed.
+        """
         pattern = re.compile(r"user_pref\((?P<name>.*?),\s*(?P<value>.*?)\);")
         out: dict[str, bool | int | str] = {}
         with src.open(encoding="utf-8") as in_fp:
@@ -351,6 +420,14 @@ class ADBProcess:
         return out
 
     def _process_logs(self, crash_reports: Iterable[PurePosixPath]) -> None:
+        """Collect and process logs. This includes processing minidumps.
+
+        Args:
+            crash_reports: Files to collect and process.
+
+        Return:
+            None
+        """
         assert self.logs is None
         if self.profile is None:
             LOG.debug("no logs to process since browser was not launched")
@@ -392,6 +469,14 @@ class ADBProcess:
                     )
 
     def _remove_logs(self) -> None:
+        """Remove collected logs.
+
+        Args:
+            None
+
+        Return:
+            None
+        """
         if self.logs is not None and self.logs.is_dir():
             rmtree(self.logs)
             self.logs = None
@@ -484,6 +569,14 @@ class ADBProcess:
                     o_fp.write(line.split(b": ", 1)[-1])
 
     def save_logs(self, dst: Path) -> None:
+        """Save logs to specified location.
+
+        Args:
+            dst: Location to save logs to.
+
+        Return:
+            None
+        """
         assert self.reason is not None, "Call close() first!"
         assert self._launches > -1, "clean_up() has been called"
         if self.logs is None:
@@ -502,6 +595,17 @@ class ADBProcess:
         poll_rate: float = 0.5,
         timeout: int = 60,
     ) -> bool:
+        """Wait for specified files to no longer be in use or the time limit to be hit
+        before continuing.
+
+        Args:
+            wait_files: Files to wait on.
+            poll_rate: Delay between checks.
+            timeout: Number of seconds to wait.
+
+        Return:
+            True if all files are closed before the time limit otherwise False.
+        """
         assert poll_rate >= 0
         assert timeout >= 0
         assert poll_rate <= timeout
@@ -522,9 +626,25 @@ class ADBProcess:
         return True
 
     def _terminate(self) -> None:
+        """Force close the browser.
+
+        Args:
+            None
+
+        Return:
+            None
+        """
         # TODO: is this the best way???
         self._session.shell(["am", "force-stop", self._package])
 
     def wait(self) -> None:
+        """Wait for browser process.
+
+        Args:
+            None
+
+        Return:
+            None
+        """
         while self.is_running():
             sleep(0.25)
