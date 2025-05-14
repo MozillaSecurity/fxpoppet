@@ -139,7 +139,7 @@ def main(args: Namespace) -> int:
                 LOG.info("Launched.")
                 proc.wait()
             except KeyboardInterrupt:  # pragma: no cover
-                pass
+                LOG.info("Aborting...")
             finally:
                 proc.close()
                 if args.logs is not None:
