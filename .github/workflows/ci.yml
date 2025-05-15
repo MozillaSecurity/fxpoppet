@@ -50,6 +50,11 @@ jobs:
       - name: Run tests
         run: tox -e ${{ matrix.toxenv }}
 
+      - name: Run Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: tox -e codecov
+
   publish:
     name: Build & Publish to PyPI
     if: github.event_name == 'release'
