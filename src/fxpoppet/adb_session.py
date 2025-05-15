@@ -227,7 +227,7 @@ class ADBSession:
                 proc_id, ppid, memory, name = line.split()
                 yield DeviceProcessInfo(int(memory), name, int(proc_id), int(ppid))
             except ValueError:  # noqa: PERF203
-                LOG.debug("failed to parse ps line %r", line)
+                LOG.debug("failed to parse ps line '%s'", line)
 
     @property
     def airplane_mode(self) -> bool:
