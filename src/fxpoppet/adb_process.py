@@ -83,7 +83,7 @@ class ADBProcess:
     ) -> None:
         assert package_name
         if not session.is_installed(package_name):
-            raise ADBSessionError(f"Package {package_name!r} is not installed")
+            raise ADBSessionError(f"Package '{package_name}' is not installed")
         self._launches = 0
         self._package = package_name
         self._pid: int | None = None
@@ -258,11 +258,11 @@ class ADBProcess:
         elif ".geckoview_example" in self._package:
             app = f"{self._package}/org.mozilla.geckoview_example.GeckoViewActivity"
         else:
-            raise ADBLaunchError(f"Unsupported package {self._package!r}")
+            raise ADBLaunchError(f"Unsupported package '{self._package}'")
 
         # check app is not previously running
         if self._session.get_pid(self._package) is not None:
-            raise ADBLaunchError(f"{self._package!r} is already running")
+            raise ADBLaunchError(f"'{self._package}' is already running")
 
         # load prefs from prefs.js
         prefs = self.prefs_to_dict(prefs_js) if prefs_js else {}
@@ -345,7 +345,7 @@ class ADBProcess:
                 "Status: ok"
                 not in self._session.shell(cmd, timeout=launch_timeout).output
             ):
-                raise ADBLaunchError(f"Could not launch {self._package!r}")
+                raise ADBLaunchError(f"Could not launch '{self._package}'")
             self._pid = self._session.get_pid(self._package)
             bootstrapper.wait(self.is_healthy, url=url)
         finally:
@@ -403,7 +403,7 @@ class ADBProcess:
                 # parse value
                 value: str = pref.group("value")
                 if not value:
-                    LOG.error("Pref %r is missing value", name)
+                    LOG.error("Pref '%s' is missing value", name)
                     return None
                 if value in ("false", "true"):
                     out[name] = value == "true"
@@ -415,7 +415,7 @@ class ADBProcess:
                     try:
                         out[name] = int(value)
                     except ValueError:
-                        LOG.error("Pref %r has invalid value %r", name, value)
+                        LOG.error("Pref '%s' has invalid value '%s'", name, value)
                         return None
         return out
 
