@@ -2,6 +2,7 @@ FXPoppet
 ========
 [![CI](https://github.com/MozillaSecurity/fxpoppet/actions/workflows/ci.yml/badge.svg)](https://github.com/MozillaSecurity/fxpoppet/actions/workflows/ci.yml)
 [![Matrix](https://img.shields.io/badge/chat-%23fuzzing-green?logo=matrix)](https://matrix.to/#/#fuzzing:mozilla.org)
+[![PyPI](https://img.shields.io/pypi/v/fxpoppet)](https://pypi.org/project/fxpoppet)
 
 FXPoppet is a Python module that can be used to automate testing of Firefox on Android. Happy bug hunting!
 
