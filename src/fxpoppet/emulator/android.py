@@ -783,6 +783,12 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip download/update the Android SDK and system image",
     )
+    aparser.add_argument(
+        "--no-launch",
+        "-n",
+        action="store_true",
+        help="Skip creating/launching AVD",
+    )
     args = aparser.parse_args(argv)
 
     if args.boot_timeout < 0:
@@ -795,33 +801,34 @@ def main(argv: list[str] | None = None) -> None:
     if not args.skip_dl:
         AndroidEmulator.install()
 
-    # Find a free port
-    port = AndroidEmulator.search_free_ports()
-    avd_name = f"x86.{port:d}"
+    if not args.no_launch:
+        # Find a free port
+        port = AndroidEmulator.search_free_ports()
+        avd_name = f"x86.{port:d}"
 
-    # Create an AVD and boot it once
-    AndroidEmulator.create_avd(avd_name)
-    try:
-        # Boot the AVD
-        emu = AndroidEmulator(
-            port=port,
-            avd_name=avd_name,
-            verbose=args.verbose,
-            boot_timeout=args.boot_timeout,
-            headless=args.headless,
-        )
-        LOG.info("Android emulator is running on port %d", port)
+        # Create an AVD and boot it once
+        AndroidEmulator.create_avd(avd_name)
         try:
-            emu.wait()
-        except KeyboardInterrupt:
-            LOG.info("Aborting...")
+            # Boot the AVD
+            emu = AndroidEmulator(
+                port=port,
+                avd_name=avd_name,
+                verbose=args.verbose,
+                boot_timeout=args.boot_timeout,
+                headless=args.headless,
+            )
+            LOG.info("Android emulator is running on port %d", port)
+            try:
+                emu.wait()
+            except KeyboardInterrupt:
+                LOG.info("Aborting...")
+            finally:
+                if emu.poll() is None:
+                    emu.shutdown()
+                # this should never timeout
+                emu.wait(timeout=120)
         finally:
-            if emu.poll() is None:
-                emu.shutdown()
-            # this should never timeout
-            emu.wait(timeout=120)
-    finally:
-        AndroidEmulator.remove_avd(avd_name)
+            AndroidEmulator.remove_avd(avd_name)
 
 
 if __name__ == "__main__":
