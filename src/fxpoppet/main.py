@@ -11,7 +11,7 @@ from pathlib import Path
 from .adb_process import ADBProcess
 from .adb_session import DEVICE_TMP, ADBSession
 
-LOG = getLogger("adb_device")
+LOG = getLogger(__name__)
 
 __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
