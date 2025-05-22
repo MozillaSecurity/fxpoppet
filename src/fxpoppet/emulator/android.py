@@ -32,6 +32,8 @@ from fuzzfetch.extract import extract_zip
 
 __author__ = "Jesse Schwartzentruber"
 
+# https://developer.android.com/tools/releases/build-tools
+BUILD_TOOLS = "28.0.3"
 EXE_SUFFIX = ".exe" if system() == "Windows" else ""
 REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
 IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
@@ -526,7 +528,7 @@ class AndroidEmulator:
 
         # required for: aapt
         sdk_repo.get_file(
-            "build-tools;28.0.3", PATHS.sdk_root, extract_package_path=False
+            f"build-tools;{BUILD_TOOLS}", PATHS.sdk_root, extract_package_path=False
         )
 
         # this is a hack and without it for some reason the following error can happen:
