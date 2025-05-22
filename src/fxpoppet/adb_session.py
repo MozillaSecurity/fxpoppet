@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping, Sequence
 
 
-LOG = getLogger("adb_session")
+LOG = getLogger(__name__)
 
 __all__ = ("ADBCommandError", "ADBCommunicationError", "ADBSession", "ADBSessionError")
 __author__ = "Tyson Smith"

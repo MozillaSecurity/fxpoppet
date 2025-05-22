@@ -24,7 +24,7 @@ from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
 
-LOG = getLogger("adb_process")
+LOG = getLogger(__name__)
 
 __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
