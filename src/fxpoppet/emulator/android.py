@@ -29,6 +29,7 @@ from xml.etree.ElementTree import (
 
 from fuzzfetch.download import download_url, get_url, iec
 from fuzzfetch.extract import extract_zip
+from xvfbwrapper import Xvfb
 
 __author__ = "Jesse Schwartzentruber"
 
@@ -368,6 +369,7 @@ class AndroidEmulator:
         snapshot: str = "never",
         env: dict[str, str] | None = None,
         headless: bool = False,
+        xvfb: bool = False,
         target: str | None = None,
         verbose: bool = False,
         boot_timeout: int | None = 120,
@@ -381,6 +383,7 @@ class AndroidEmulator:
                       loading of emulator.
             env: Environment variables to pass to emulator subprocess.
             headless: Use -no-window to launch emulator.
+            xvfb: Use Xvfb.
             target: The target name (from builds.json).
             verbose: Enable verbose logging.
             boot_timeout: Time to wait for Android to boot in the emulator.
@@ -395,6 +398,7 @@ class AndroidEmulator:
         self.verbose = verbose
 
         assert self.snapshot in {"never", "save", "load"}
+        assert not headless or not xvfb, "Xvfb and headless are mutually exclusive"
 
         avd_dir = PATHS.avd_home / f"{self.avd_name}.avd"
 
@@ -430,6 +434,12 @@ class AndroidEmulator:
 
         output = None if getLogger().getEffectiveLevel() == DEBUG else DEVNULL
 
+        if xvfb:
+            self.xvfb = Xvfb(width=1280, height=1024)
+            self.xvfb.start()
+        else:
+            self.xvfb = None
+
         # make a copy before we modify the passed env dictionary
         env = dict(env or {})
         if system() == "Linux":
@@ -446,14 +456,19 @@ class AndroidEmulator:
             stderr=output,
             stdout=output,
         )
+        # wait for emulator to launch so we can use wait-for-device
         try:
             sleep(5)
         except Exception:
             if emu.poll() is None:
                 emu.terminate()
             emu.wait()
+            if self.xvfb is not None:
+                self.xvfb.stop()
             raise
         if emu.poll() is not None:
+            if self.xvfb is not None:
+                self.xvfb.stop()
             raise AndroidEmulatorError("Failed to launch emulator")
 
         try:
@@ -470,10 +485,14 @@ class AndroidEmulator:
         except TimeoutExpired:
             emu.terminate()
             emu.wait()
+            if self.xvfb is not None:
+                self.xvfb.stop()
             raise AndroidEmulatorError("Emulator failed to boot in time.") from None
         except:
             emu.terminate()
             emu.wait()
+            if self.xvfb is not None:
+                self.xvfb.stop()
             raise
 
         self.emu = emu
@@ -495,6 +514,7 @@ class AndroidEmulator:
             snapshot=self.snapshot,
             env=self.env,
             headless=self.headless,
+            xvfb=self.xvfb is not None,
             target=self.target,
             verbose=self.verbose,
         )
@@ -590,6 +610,8 @@ class AndroidEmulator:
                 PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img.firstboot",
             )
 
+        if self.xvfb is not None:
+            self.xvfb.stop()
         return result
 
     def shutdown(self) -> None:
@@ -757,12 +779,12 @@ def main(argv: list[str] | None = None) -> None:
     """Create and run an AVD and delete it when shutdown.
 
     Args:
-        argv (list/None): Override sys.argv (for testing).
+        argv: Override sys.argv (for testing).
 
     Returns:
         None
     """
-    aparser = ArgumentParser(prog="python -m bearspray.android")
+    aparser = ArgumentParser(prog="Android emulator management tool")
     aparser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
@@ -776,8 +798,12 @@ def main(argv: list[str] | None = None) -> None:
             "(default: %(default)ss)"
         ),
     )
-    aparser.add_argument(
+    disp_group = aparser.add_mutually_exclusive_group()
+    disp_group.add_argument(
         "--headless", action="store_true", help="Run emulator in headless mode"
+    )
+    disp_group.add_argument(
+        "--xvfb", action="store_true", help="Run emulator with Xvfb"
     )
     aparser.add_argument(
         "--skip-dl",
@@ -818,6 +844,7 @@ def main(argv: list[str] | None = None) -> None:
                 verbose=args.verbose,
                 boot_timeout=args.boot_timeout,
                 headless=args.headless,
+                xvfb=args.xvfb,
             )
             LOG.info("Android emulator is running on port %d", port)
             try:
