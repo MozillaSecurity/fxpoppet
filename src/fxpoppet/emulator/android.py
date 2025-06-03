@@ -404,6 +404,8 @@ class AndroidEmulator:
 
         args = []
         args.append("-writable-system")
+        args.append("-no-boot-anim")
+        args.append("-no-metrics")
         args.extend(("-selinux", "permissive"))
 
         if self.headless:
