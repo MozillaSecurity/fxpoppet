@@ -29,7 +29,9 @@ from xml.etree.ElementTree import (
 
 from fuzzfetch.download import download_url, get_url, iec
 from fuzzfetch.extract import extract_zip
-from xvfbwrapper import Xvfb
+
+with suppress(ImportError):
+    from xvfbwrapper import Xvfb
 
 __author__ = "Jesse Schwartzentruber"
 
@@ -437,7 +439,11 @@ class AndroidEmulator:
         output = None if getLogger().getEffectiveLevel() == DEBUG else DEVNULL
 
         if xvfb:
-            self.xvfb = Xvfb(width=1280, height=1024)
+            try:
+                self.xvfb: Xvfb | None = Xvfb(width=1280, height=1024)
+            except NameError:
+                LOG.error("Missing xvfbwrapper")
+                raise
             self.xvfb.start()
         else:
             self.xvfb = None
@@ -578,7 +584,7 @@ class AndroidEmulator:
             None
         """
         assert self.emu is not None
-        return self.emu.terminate()
+        self.emu.terminate()
 
     def poll(self) -> int | None:
         """Poll emulator process for exit status.
