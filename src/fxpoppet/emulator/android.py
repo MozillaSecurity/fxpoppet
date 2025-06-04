@@ -364,6 +364,19 @@ class AndroidEmulator:
 
     DESC = "Android emulator"
 
+    __slots__ = (
+        "avd_name",
+        "emu",
+        "env",
+        "headless",
+        "pid",
+        "port",
+        "snapshot",
+        "target",
+        "verbose",
+        "xvfb",
+    )
+
     def __init__(
         self,
         avd_name: str = "x86",
