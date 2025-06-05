@@ -16,7 +16,7 @@ from shutil import copy, rmtree
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 from subprocess import DEVNULL, Popen, TimeoutExpired, check_output
 from tempfile import TemporaryDirectory
-from time import sleep
+from time import perf_counter, sleep
 from urllib.parse import urlparse
 from xml.etree.ElementTree import (
     Element,
@@ -387,7 +387,7 @@ class AndroidEmulator:
         xvfb: bool = False,
         target: str | None = None,
         verbose: bool = False,
-        boot_timeout: int | None = 120,
+        boot_timeout: int = 120,
     ) -> None:
         """Create an AndroidEmulator object.
 
@@ -477,21 +477,49 @@ class AndroidEmulator:
             stderr=output,
             stdout=output,
         )
-        # wait for emulator to launch so we can use wait-for-device
-        try:
-            sleep(5)
-        except Exception:
-            if emu.poll() is None:
-                emu.terminate()
-            emu.wait()
-            if self.xvfb is not None:
-                self.xvfb.stop()
-            raise
-        if emu.poll() is not None:
-            if self.xvfb is not None:
-                self.xvfb.stop()
-            raise AndroidEmulatorError("Failed to launch emulator")
 
+        try:
+            self.boot_wait(emu, port, boot_timeout)
+        except:
+            emu.terminate()
+            try:
+                # this should not hang, timeout is here just in case.
+                emu.wait(120)
+            finally:
+                if self.xvfb is not None:
+                    self.xvfb.stop()
+            raise
+
+        self.emu = emu
+        self.pid = emu.pid
+
+    @staticmethod
+    def boot_wait(proc: Popen[bytes], port: int, boot_timeout: int) -> None:
+        """Wait for Android emulator instance to boot.
+
+        Args:
+            proc: Emulator process.
+            port: ADB control port for emulator to use.
+            boot_timeout: Time to wait for Android to boot in the emulator.
+
+        Return:
+            None
+        """
+        assert boot_timeout > 0
+        deadline = perf_counter() + boot_timeout
+        # wait for adb port so we can use wait-for-device
+        with socket(AF_INET, SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            while True:
+                with suppress(ConnectionError, TimeoutError):
+                    sock.connect(("127.0.0.1", port))
+                    break
+                if proc.poll() is not None:
+                    raise AndroidEmulatorError("Incomplete emulator launch.")
+                if deadline >= perf_counter():
+                    raise AndroidEmulatorError("Timeout waiting for ADB port.")
+                sleep(1)
+        # use adb wait-for-device to wait for device to boot
         try:
             check_output(
                 [
@@ -501,23 +529,13 @@ class AndroidEmulator:
                     "while [[ -z $(getprop sys.boot_completed) ]];do sleep 1;done",
                 ],
                 timeout=boot_timeout,
-                env={"ANDROID_SERIAL": f"emulator-{self.port:d}"},
+                env={"ANDROID_SERIAL": f"emulator-{port:d}"},
             )
         except TimeoutExpired:
-            emu.terminate()
-            emu.wait()
-            if self.xvfb is not None:
-                self.xvfb.stop()
             raise AndroidEmulatorError("Emulator failed to boot in time.") from None
-        except:
-            emu.terminate()
-            emu.wait()
-            if self.xvfb is not None:
-                self.xvfb.stop()
-            raise
 
-        self.emu = emu
-        self.pid = emu.pid
+        if proc.poll() is not None:
+            raise AndroidEmulatorError("Failed to launch emulator.")
 
     def relaunch(self) -> AndroidEmulator:
         """Create a new AndroidEmulator object created with the same parameters used to
