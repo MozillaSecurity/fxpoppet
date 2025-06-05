@@ -585,6 +585,8 @@ class AndroidEmulator:
         Returns:
             None
         """
+        if self.xvfb is not None:
+            self.xvfb.stop()
         self.remove_avd(self.avd_name)
 
     def terminate(self) -> None:
@@ -630,9 +632,6 @@ class AndroidEmulator:
                 PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img",
                 PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img.firstboot",
             )
-
-        if self.xvfb is not None:
-            self.xvfb.stop()
         return result
 
     def shutdown(self) -> None:
@@ -875,8 +874,11 @@ def main(argv: list[str] | None = None) -> None:
             finally:
                 if emu.poll() is None:
                     emu.shutdown()
-                # this should never timeout
-                emu.wait(timeout=120)
+                try:
+                    # this should never timeout
+                    emu.wait(timeout=120)
+                finally:
+                    emu.cleanup()
         finally:
             AndroidEmulator.remove_avd(avd_name)
 
