@@ -454,6 +454,7 @@ class AndroidEmulator:
             if sdcard_fb.is_file():
                 if sdcard.is_file():
                     sdcard.unlink()
+                LOG.debug("preparing to load snapshot: %s -> %s", sdcard_fb, sdcard)
                 copy(sdcard_fb, sdcard)
 
         args.extend(("-port", f"{self.port:d}"))
@@ -605,7 +606,8 @@ class AndroidEmulator:
         (PATHS.sdk_root / "platforms").mkdir(exist_ok=True)
 
     def cleanup(self) -> None:
-        """Cleanup any process files on disk.
+        """Cleanup any process files on disk. Snapshot == "save" implies that the AVD
+        is still required and it will not be removed.
 
         Args:
             None
@@ -615,7 +617,10 @@ class AndroidEmulator:
         """
         if self.xvfb is not None:
             self.xvfb.stop()
-        self.remove_avd(self.avd_name)
+        if self.snapshot != Snapshot.SAVE:
+            self.remove_avd(self.avd_name)
+        else:
+            LOG.debug("AVD not removed: snapshot == %s", self.snapshot.name)
 
     def terminate(self) -> None:
         """Terminate the emulator process.
@@ -665,6 +670,11 @@ class AndroidEmulator:
         """
         assert self.poll() is not None
         assert self.snapshot == Snapshot.SAVE
+        LOG.debug(
+            "saving snapshot: %s -> %s",
+            PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG,
+            PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG_FIRSTBOOT,
+        )
         copy(
             PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG,
             PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG_FIRSTBOOT,
