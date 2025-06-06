@@ -42,6 +42,8 @@ EXE_SUFFIX = ".exe" if system() == "Windows" else ""
 REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
 IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
 LOG = getLogger(__name__)
+SD_IMG = "sdcard.img"
+SD_IMG_FIRSTBOOT = f"{SD_IMG}.firstboot"
 SYS_IMG = "android-35"
 WORKING_DIR = Path.home() / "fxpoppet-emulator"
 
@@ -447,8 +449,8 @@ class AndroidEmulator:
             args.append("-no-snapshot-save")
 
             # replace sdcard with firstboot version if exists
-            sdcard = avd_dir / "sdcard.img"
-            sdcard_fb = avd_dir / "sdcard.img.firstboot"
+            sdcard = avd_dir / SD_IMG
+            sdcard_fb = avd_dir / SD_IMG_FIRSTBOOT
             if sdcard_fb.is_file():
                 if sdcard.is_file():
                     sdcard.unlink()
@@ -650,15 +652,23 @@ class AndroidEmulator:
             Exit status of emulator process (None if still running).
         """
         assert self.emu is not None
-        result = self.emu.wait(timeout=timeout)
+        return self.emu.wait(timeout=timeout)
 
-        if self.snapshot == "save":
-            sleep(5)
-            copy(
-                PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img",
-                PATHS.avd_home / f"{self.avd_name}.avd" / "sdcard.img.firstboot",
-            )
-        return result
+    def save_snapshot(self) -> None:
+        """Save emulator snapshot.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
+        assert self.poll() is not None
+        assert self.snapshot == Snapshot.SAVE
+        copy(
+            PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG,
+            PATHS.avd_home / f"{self.avd_name}.avd" / SD_IMG_FIRSTBOOT,
+        )
 
     def shutdown(self) -> None:
         """Use the emulator control channel to request clean shutdown.
@@ -816,9 +826,9 @@ class AndroidEmulator:
         if (api_gapi / "x86_64" / "userdata.img").exists():
             copy(api_gapi / "x86_64" / "userdata.img", avd_dir)
 
-        sdcard = avd_dir / "sdcard.img"
+        sdcard = avd_dir / SD_IMG
         check_output([str(mksd_path), f"{sdcard_size:d}M", str(sdcard)])
-        copy(sdcard, f"{sdcard}.firstboot")
+        copy(sdcard, avd_dir / SD_IMG_FIRSTBOOT)
 
 
 def main(argv: list[str] | None = None) -> None:
