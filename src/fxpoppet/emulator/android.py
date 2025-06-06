@@ -681,7 +681,7 @@ class AndroidEmulator:
         )
 
     def shutdown(self) -> None:
-        """Use the emulator control channel to request clean shutdown.
+        """Close the emulator process. This methods exists for compatibility.
 
         Args:
             None
@@ -690,24 +690,8 @@ class AndroidEmulator:
             None
         """
         LOG.info("Initiating emulator shutdown")
-        with suppress(ConnectionResetError), socket(AF_INET, SOCK_STREAM) as sock:
-            sock.connect(("127.0.0.1", self.port))
-            # read connection message
-            lines = sock.recv(65536).splitlines()
-            try:
-                auth_token_idx = lines.index(
-                    b"Android Console: you can find your <auth_token> in "
-                )
-            except ValueError:
-                pass
-            else:
-                auth_token_path = lines[auth_token_idx + 1].strip(b"'")
-                with open(auth_token_path, "rb") as auth_token_fp:
-                    auth_token = auth_token_fp.read()
-                sock.sendall(b"auth " + auth_token + b"\n")
-                # receive auth message
-                _ = sock.recv(65536)
-            sock.sendall(b"kill\n")
+        # terminate handled and the emulator attempts a clean shutdown
+        self.terminate()
 
     @staticmethod
     def search_free_ports(search_port: int | None = None) -> int:
