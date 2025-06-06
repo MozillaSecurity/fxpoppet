@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from contextlib import suppress
+from enum import Enum, auto
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
 from pathlib import Path
@@ -43,6 +44,14 @@ IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-
 LOG = getLogger(__name__)
 SYS_IMG = "android-35"
 WORKING_DIR = Path.home() / "fxpoppet-emulator"
+
+
+class Snapshot(Enum):
+    """System image snapshot handling modes"""
+
+    LOAD = auto()
+    NEVER = auto()
+    SAVE = auto()
 
 
 def init_logging(debug: bool = False) -> None:
@@ -407,12 +416,11 @@ class AndroidEmulator:
         self.emu = None
         self.env = dict(env or {})
         self.port = port
-        self.snapshot = snapshot
+        self.snapshot = Snapshot[snapshot.upper()]
         self.headless = headless
         self.target = target
         self.verbose = verbose
 
-        assert self.snapshot in {"never", "save", "load"}
         assert not headless or not xvfb, "Xvfb and headless are mutually exclusive"
 
         avd_dir = PATHS.avd_home / f"{self.avd_name}.avd"
@@ -429,13 +437,13 @@ class AndroidEmulator:
         if self.verbose:
             args.append("-verbose")
 
-        if self.snapshot == "never":
+        if self.snapshot == Snapshot.NEVER:
             args.append("-no-snapshot")
 
-        elif self.snapshot == "save":
+        elif self.snapshot == Snapshot.SAVE:
             args.append("-no-snapshot-load")
 
-        elif self.snapshot == "load":
+        elif self.snapshot == Snapshot.LOAD:
             args.append("-no-snapshot-save")
 
             # replace sdcard with firstboot version if exists
@@ -470,7 +478,7 @@ class AndroidEmulator:
                 env["XAUTHORITY"] = getenv("XAUTHORITY", "")
         env["ANDROID_AVD_HOME"] = str(PATHS.avd_home)
 
-        LOG.info("Launching Android emulator with snapshot=%s", self.snapshot)
+        LOG.info("Launching Android emulator with snapshot=%s", self.snapshot.name)
         emu = Popen(  # pylint: disable=consider-using-with
             [str(PATHS.sdk_root / "emulator" / f"emulator{EXE_SUFFIX}"), *args],
             env=env,
@@ -550,7 +558,7 @@ class AndroidEmulator:
         return type(self)(
             avd_name=self.avd_name,
             port=self.port,
-            snapshot=self.snapshot,
+            snapshot=self.snapshot.name,
             env=self.env,
             headless=self.headless,
             xvfb=self.xvfb is not None,
