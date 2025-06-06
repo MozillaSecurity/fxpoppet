@@ -524,7 +524,7 @@ class AndroidEmulator:
                     break
                 if proc.poll() is not None:
                     raise AndroidEmulatorError("Incomplete emulator launch.")
-                if deadline >= perf_counter():
+                if deadline <= perf_counter():
                     raise AndroidEmulatorError("Timeout waiting for ADB port.")
                 sleep(1)
         # use adb wait-for-device to wait for device to boot
