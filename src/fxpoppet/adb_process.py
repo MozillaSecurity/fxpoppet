@@ -167,11 +167,12 @@ class ADBProcess:
             if self.logs and (self.logs / "log_asan.txt").is_file():
                 self.reason = Reason.ALERT
         except ADBSessionError:
-            LOG.warning("No device detected while closing process")
-        self._pid = None
-        self.profile = None
-        if self.reason is None:
-            self.reason = Reason.CLOSED
+            LOG.error("No device detected while closing process")
+        finally:
+            if self.reason is None:
+                self.reason = Reason.CLOSED
+            self.profile = None
+            self._pid = None
 
     def find_crashreports(self) -> Generator[PurePosixPath]:
         """Scan for crash reports.
