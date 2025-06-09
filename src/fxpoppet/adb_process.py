@@ -430,9 +430,6 @@ class ADBProcess:
             None
         """
         assert self.logs is None
-        if self.profile is None:
-            LOG.debug("no logs to process since browser was not launched")
-            return
         # TODO: use a common tmp dir
         self.logs = Path(mkdtemp(prefix="mp-logs_"))
 
@@ -492,39 +489,27 @@ class ADBProcess:
         if not logcat.is_file():
             LOG.warning("log_logcat.txt does not exist!")
             return
-        err_log = logs / "log_stderr.txt"
-        if err_log.is_file():
-            LOG.warning("log_stderr.txt already exist! Overwriting...")
-        out_log = logs / "log_stdout.txt"
-        if out_log.is_file():
-            LOG.warning("log_stdout.txt already exist! Overwriting...")
-        package_name_bytes = package_name.encode("utf-8")
         # create set of filter pids
         # this will include any line that mentions "Gecko", "MOZ_" or the package name
+        tokens = (b"Gecko", b"MOZ_", b"wrap.sh", package_name.encode("utf-8"))
         asan_tid = None
         filter_pids = set()
         re_id = re.compile(rb"^\d+-\d+\s+(\d+[:.]){3}\d+\s+(?P<pid>\d+)\s+(?P<tid>\d+)")
         with logcat.open("rb") as lc_fp:
             for line in lc_fp:
-                if (
-                    b"Gecko" not in line
-                    and b"MOZ_" not in line
-                    and package_name_bytes not in line
-                    and b"wrap.sh" not in line
-                ):
+                if all(x not in line for x in tokens):
                     continue
                 m_id = re_id.match(line)
-                if m_id is None:
-                    continue
-                filter_pids.add(m_id.group("pid"))
-                if asan_tid is None and b": AddressSanitizer:" in line:
-                    asan_tid = m_id.group("tid")
+                if m_id is not None:
+                    filter_pids.add(m_id.group("pid"))
+                    if asan_tid is None and b": AddressSanitizer:" in line:
+                        asan_tid = m_id.group("tid")
         LOG.debug("%d interesting pid(s) found in logcat output", len(filter_pids))
         # filter logs
         with (
             logcat.open("rb") as lc_fp,
-            err_log.open("wb") as e_fp,
-            out_log.open("wb") as o_fp,
+            (logs / "log_stderr.txt").open("wb") as e_fp,
+            (logs / "log_stdout.txt").open("wb") as o_fp,
         ):
             for line in lc_fp:
                 # quick check if pid is in the line
