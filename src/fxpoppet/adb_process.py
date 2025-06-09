@@ -638,14 +638,20 @@ class ADBProcess:
         # TODO: is this the best way???
         self._session.shell(["am", "force-stop", self._package])
 
-    def wait(self) -> None:
-        """Wait for browser process.
+    def wait(self, timeout: float | None = None) -> bool:
+        """Wait for process to terminate. If a timeout of zero or greater is specified
+        the call will block until the timeout expires.
 
         Args:
-            None
+            timeout: The maximum amount of time in seconds to wait or
+                     None (wait indefinitely).
 
-        Return:
-            None
+        Returns:
+            True if the process exits before the timeout expires otherwise False.
         """
+        deadline = None if timeout is None else time() + timeout
         while self.is_running():
+            if deadline is not None and deadline <= time():
+                return False
             sleep(0.25)
+        return True
