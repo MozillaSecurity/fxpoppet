@@ -11,8 +11,8 @@ from .adb_process import ADBLaunchError, ADBProcess, Reason
 from .adb_session import ADBResult, ADBSession, ADBSessionError
 
 
-def test_adb_process_01(mocker):
-    """test creating a simple device"""
+def test_adb_process_basic(mocker):
+    """test ADBProcess() basic features"""
     test_pkg = "org.test.preinstalled"
     fake_session = mocker.Mock(spec_set=ADBSession)
     with ADBProcess(test_pkg, fake_session) as proc:
@@ -21,12 +21,46 @@ def test_adb_process_01(mocker):
         assert proc.logs is None
         assert proc.profile is None
         assert proc.reason == Reason.CLOSED
+        assert proc.launches == 0
+        assert not proc.is_running()
+        assert not proc.is_healthy()
+        assert proc.wait(timeout=0)
         assert proc._pid is None
         proc.close()
         assert not proc.logs
 
 
-def test_adb_process_02(mocker):
+def test_adb_process_close(mocker):
+    """test ADBProcess.close()"""
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.listdir.return_value = [PurePosixPath("fake.dmp")]
+    fake_session.collect_logs.return_value = "log output..."
+    fake_session.open_files.return_value = ()
+    with ADBProcess("org.test.app", fake_session) as proc:
+        # pretend we launched
+        proc.reason = None
+        proc.profile = PurePosixPath("on_device_profile")
+        proc.close()
+        assert proc.reason == Reason.ALERT
+        assert proc.profile is None
+        assert proc.logs is not None
+
+
+def test_adb_process_close_device_error(mocker):
+    """test ADBProcess.close() handle ADBSessionError"""
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.listdir.side_effect = ADBSessionError()
+    with ADBProcess("org.test.app", fake_session) as proc:
+        # pretend we launched
+        proc.reason = None
+        proc.profile = PurePosixPath("on_device_profile")
+        proc.close()
+        assert proc.reason == Reason.CLOSED
+        assert proc.profile is None
+        assert proc.logs is None
+
+
+def test_adb_process_missing_package(mocker):
     """test creating device with unknown package"""
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.is_installed.return_value = False
@@ -34,7 +68,7 @@ def test_adb_process_02(mocker):
         ADBProcess("org.test.unknown", fake_session)
 
 
-def test_adb_process_03(mocker):
+def test_adb_process_unsupported_app(mocker):
     """test ADBProcess.launch() unsupported app"""
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.collect_logs.return_value = ""
@@ -45,7 +79,7 @@ def test_adb_process_03(mocker):
         proc.launch("fake.url")
 
 
-def test_adb_process_04(mocker):
+def test_adb_process_failed_bootstrap(mocker):
     """test ADBProcess.launch() failed bootstrap setup"""
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
@@ -61,7 +95,7 @@ def test_adb_process_04(mocker):
         proc.launch("fake.url")
 
 
-def test_adb_process_05(mocker):
+def test_adb_process_package_already_running(mocker):
     """test ADBProcess.launch() package is running (bad state)"""
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.call.return_value = (1, "")
@@ -90,8 +124,10 @@ def test_adb_process_05(mocker):
         {"test1": "1", "test2": "2"},
     ],
 )
-def test_adb_process_07(mocker, env):
+def test_adb_process_launch(mocker, env):
     """test ADBProcess.launch(), ADBProcess.is_running() and ADBProcess.is_healthy()"""
+    mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
+    mocker.patch("fxpoppet.adb_process.time", side_effect=range(100))
     fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
@@ -108,6 +144,7 @@ def test_adb_process_07(mocker, env):
         assert proc.launch("fake.url", env_mod=env, prefs_js=None)
         assert proc.is_running()
         assert proc.is_healthy()
+        assert not proc.wait(timeout=3)
         assert proc.launches == 1
         assert proc.reason is None
         proc.close()
@@ -117,7 +154,7 @@ def test_adb_process_07(mocker, env):
     assert fake_bs.return_value.close.call_count == 1
 
 
-def test_adb_process_08(mocker):
+def test_adb_process_wait_on_files(mocker):
     """test ADBProcess.wait_on_files()"""
     fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
@@ -144,7 +181,7 @@ def test_adb_process_08(mocker):
         proc.close()
 
 
-def test_adb_process_09(mocker):
+def test_adb_process_find_crashreports(mocker):
     """test ADBProcess.find_crashreports()"""
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
@@ -163,7 +200,7 @@ def test_adb_process_09(mocker):
         assert not any(proc.find_crashreports())
 
 
-def test_adb_process_10(mocker, tmp_path):
+def test_adb_process_save_logs(mocker, tmp_path):
     """test ADBProcess.save_logs()"""
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     fake_session = mocker.Mock(spec_set=ADBSession)
@@ -182,7 +219,7 @@ def test_adb_process_10(mocker, tmp_path):
     assert any(dmp_path.glob("fake.txt"))
 
 
-def test_adb_process_11(mocker, tmp_path):
+def test_adb_process_process_logs(mocker, tmp_path):
     """test ADBProcess._process_logs()"""
     mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
     mocker.patch("fxpoppet.adb_process.getenv", autospec=True, return_value="1")
@@ -230,7 +267,7 @@ def test_adb_process_11(mocker, tmp_path):
         assert fake_mdp.return_value.__enter__.return_value.create_log.call_count == 1
 
 
-def test_adb_process_12(tmp_path):
+def test_adb_process_split_logcat(tmp_path):
     """test ADBProcess._split_logcat()"""
     log_path = tmp_path / "logs"
     log_path.mkdir()
@@ -306,7 +343,7 @@ def test_adb_process_12(tmp_path):
         ("user_pref(test, 0);\n", None),
     ],
 )
-def test_adb_process_13(tmp_path, input_data, result):
+def test_adb_process_prefs_to_dict(tmp_path, input_data, result):
     """test ADBProcess.prefs_to_dict()"""
     prefs_js = tmp_path / "prefs.js"
     prefs_js.write_text(input_data)
