@@ -1239,80 +1239,23 @@ def test_adb_session_35(mocker):
     assert session.airplane_mode
 
 
+@mark.parametrize(
+    "result, shell_effect",
+    [
+        # successful boot
+        (True, (ADBResult(0, "0"), ADBResult(0, "1"))),
+        # timeout
+        (False, (ADBResult(0, "0"), ADBResult(0, "0"))),
+    ],
+)
 @mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_36(mocker):
+def test_adb_session_36(mocker, result, shell_effect):
     """test ADBSession.wait_for_boot()"""
-    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb")
-    fake_sleep = mocker.patch("fxpoppet.adb_session.sleep")
-
-    # test timeout
-    # pylint: disable=unused-argument
-    def fake_adb_01(_, cmd, timeout=None):
-        if cmd[1] == "shell":
-            # strip "adb shell -n -T"
-            shell_cmd = cmd[4:]
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "0")
-        raise AssertionError(f"unexpected command {cmd!r}")
-
-    ADBSession._call_adb = fake_adb_01
+    mocker.patch("fxpoppet.adb_session.time", side_effect=range(3))
+    mocker.patch.object(ADBSession, "shell", side_effect=shell_effect)
     session = ADBSession("127.0.0.1")
     session.connected = True
-    assert not session.wait_for_boot(timeout=0.01)
-    fake_sleep.reset_mock()
-
-    # test already booted
-    # pylint: disable=unused-argument
-    def fake_adb_02(_, cmd, timeout=None):
-        if cmd[1] == "shell":
-            # strip "adb shell -n -T"
-            shell_cmd = cmd[4:]
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
-        raise AssertionError(f"unexpected command {cmd!r}")
-
-    ADBSession._call_adb = fake_adb_02
-    session = ADBSession("127.0.0.1")
-    session.connected = True
-    assert session.wait_for_boot()
-    assert fake_sleep.call_count == 0
-    fake_sleep.reset_mock()
-
-    # test boot in progress
-    anim_done = False
-    boot_done = False
-
-    # pylint: disable=unused-argument
-    def fake_adb_03(_, cmd, timeout=None):
-        nonlocal anim_done
-        nonlocal boot_done
-        if cmd[1] == "shell":
-            # strip "adb shell -n -T"
-            shell_cmd = cmd[4:]
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    if not anim_done:
-                        anim_done = True
-                        return ADBResult(0, "")
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "sys.boot_completed":
-                    if not boot_done:
-                        boot_done = True
-                        return ADBResult(0, "0")
-                    return ADBResult(0, "1")
-        raise AssertionError(f"unexpected command {cmd!r}")
-
-    ADBSession._call_adb = fake_adb_03
-    session = ADBSession("127.0.0.1")
-    session.connected = True
-    assert session.wait_for_boot()
-    assert fake_sleep.call_count == 3
+    assert session.wait_for_boot(timeout=2, poll_wait=0) == result
 
 
 @mark.usefixtures("tmp_session_adb_check")

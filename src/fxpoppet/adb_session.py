@@ -282,7 +282,8 @@ class ADBSession:
         assert args
         if self._debug_adb:
             LOG.debug("call '%s' (%d)", " ".join(args), timeout)
-        if not self.connected and args[0] not in ("connect", "devices", "disconnect"):
+        # a few adb commands do not require a connection
+        if not self.connected and args[0] not in {"connect", "devices", "disconnect"}:
             raise ADBCommunicationError("ADB session is not connected!")
         result = self._call_adb((str(self._adb_bin), *args), timeout=timeout)
         if self._debug_adb:
@@ -889,7 +890,7 @@ class ADBSession:
         return self.call(
             ("shell", "-T", "-n", *cmd),
             device_required=device_required,
-            timeout=timeout
+            timeout=timeout,
         )
 
     def uninstall(self, package: str) -> bool:
@@ -906,42 +907,24 @@ class ADBSession:
             return False
         return self.call(["uninstall", package], timeout=60).exit_code == 0
 
-    def wait_for_boot(self, timeout: int | None = None) -> bool:
-        """Uninstall package from the connected device.
+    def wait_for_boot(self, timeout: int, poll_wait: int = 1) -> bool:
+        """Wait for device to boot.
 
         Args:
-            timeout: Seconds to wait for device to boot.
+            timeout: Time in seconds to wait for device to boot.
+            poll_wait: Time in seconds between checks.
 
         Returns:
-            True if device booted successfully otherwise False.
+            True if device has booted successfully otherwise False.
         """
-        if timeout is not None:
-            assert timeout > 0
-            deadline = time() + timeout
-        else:
-            deadline = None
-        # first wait for the boot to complete then wait for the boot animation to
-        # complete, this will help ensure the device is in a ready state
-        anim_chk = ["getprop", "init.svc.bootanim"]
-        boot_chk = ["shell", "-T", "-n", "getprop", "sys.boot_completed"]
-        attempts = 0
-        booted = False
+        deadline = time() + timeout
+        cmd = ("getprop", "sys.boot_completed")
         while True:
-            if not booted:
-                booted = self.call(boot_chk, device_required=False).output == "1"
-                attempts += 1
-            # we need to verify that boot is complete before checking the animation is
-            # stopped because the animation can be in the stopped state early in the
-            # boot process
-            if booted and self.shell(anim_chk).output == "stopped":
-                if attempts > 1:
-                    # the device was booting so give it additional time
-                    LOG.debug("device boot was detected")
-                    sleep(5)
+            if self.shell(cmd, device_required=False).output == "1":
                 return True
-            if deadline and time() >= deadline:
-                LOG.debug("wait_for_boot() timeout %r exceeded", timeout)
+            if time() >= deadline:
+                LOG.debug("wait_for_boot() timeout exceeded (%ds)", timeout)
                 break
-            LOG.debug("waiting for device to boot")
-            sleep(0.5)
+            LOG.debug("waiting for device to boot...")
+            sleep(poll_wait)
         return False
