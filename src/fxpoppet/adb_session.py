@@ -385,9 +385,7 @@ class ADBSession:
                 raise ADBCommunicationError(
                     f"Timeout ({boot_timeout}s) waiting for device to boot"
                 )
-            result = self.call(
-                ["shell", "-T", "-n", "whoami"], device_required=False, timeout=30
-            )
+            result = self.shell(["whoami"], device_required=False, timeout=30)
             if result.exit_code != 0 or not result.output:
                 self.connected = False
                 if attempt == max_attempts:
@@ -875,18 +873,25 @@ class ADBSession:
             LOG.warning("set_enforce requires root")
         self.shell(["setenforce", str(value)])
 
-    def shell(self, cmd: Sequence[str], timeout: int = 60) -> ADBResult:
+    def shell(
+        self, cmd: Sequence[str], device_required: bool = True, timeout: int = 60
+    ) -> ADBResult:
         """Execute an ADB shell command via a non-interactive shell.
 
         Args:
             cmd: Strings to pass as arguments when calling ADB.
+            device_required: A device must be available.
             timeout: Seconds to wait for ADB call to complete.
 
         Returns:
             The exit code of the ADB call and stderr and stdout.
         """
         assert cmd
-        return self.call(("shell", "-T", "-n", *cmd), timeout=timeout)
+        return self.call(
+            ("shell", "-T", "-n", *cmd),
+            device_required=device_required,
+            timeout=timeout
+        )
 
     def uninstall(self, package: str) -> bool:
         """Uninstall package from the connected device.
