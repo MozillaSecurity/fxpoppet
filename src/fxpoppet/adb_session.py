@@ -81,37 +81,34 @@ class ADBSession:
 
     Attributes:
         _adb_bin: ADB binary to use.
-        _cpu_arch: Android CPU architecture string.
         _debug_adb: Include ADB output in debug output.
         _ip_addr: Target device IP address.
-        _os_version: Android version string.
         _port: ADB listening port.
         _root: Connected as root user.
         connected: ADB connection state.
+        device_id: Unique Android ID.
         symbols: Location of symbols on the local machine.
     """
 
     __slots__ = (
         "_adb_bin",
-        "_cpu_arch",
         "_debug_adb",
         "_ip_addr",
-        "_os_version",
         "_port",
         "_root",
         "connected",
+        "device_id",
         "symbols",
     )
 
     def __init__(self, ip_addr: str | None = None, port: int = 5555) -> None:
         self._adb_bin = self._adb_check()
-        self._cpu_arch: str | None = None
         self._debug_adb = getenv("SHOW_ADB_DEBUG", "0") != "0"
         self._ip_addr: str | None = None
-        self._os_version: str | None = None
         self._port: int | None = None
         self._root = False
         self.connected = False
+        self.device_id: str | None = None
         self.symbols: dict[str, Path] = {}
 
         if ip_addr is not None:
@@ -302,7 +299,7 @@ class ADBSession:
                 or result.output.startswith("error: device offline")
                 or result.output.startswith("error: no devices/emulators found")
             ):
-                self.connected = False
+                LOG.error("ADB call to device %s failed", self.device_id)
                 raise ADBCommunicationError("No device detected!")
         return result
 
@@ -357,53 +354,45 @@ class ADBSession:
         """
         assert boot_timeout > 0
         assert max_attempts > 0
-        assert retry_delay > 0
-        self._cpu_arch = None
-        self._os_version = None
+        assert retry_delay >= 0
         attempt = 0
         root_called = False
         set_enforce_called = False
         while attempt < max_attempts:
             attempt += 1
-            if not self.connected:
-                if self._ip_addr is not None:
-                    addr = f"{self._ip_addr}:{self._port}"
-                    LOG.debug("connecting to '%s'", addr)
-                    if self.call(["connect", addr], timeout=30).exit_code != 0:
-                        LOG.warning("connection attempt #%d failed", attempt)
-                        sleep(retry_delay)
-                        continue
-                elif not self.devices():
-                    LOG.warning(
-                        "No device detected (attempt %d/%d)", attempt, max_attempts
-                    )
+            # attempt to connect to device
+            self.connected = False
+            if self._ip_addr is not None:
+                addr = f"{self._ip_addr}:{self._port}"
+                LOG.debug("connecting to '%s'", addr)
+                if self.call(["connect", addr], timeout=30).exit_code != 0:
+                    LOG.warning("connection attempt #%d failed", attempt)
                     sleep(retry_delay)
                     continue
-                self.connected = True
+            elif not self.devices():
+                LOG.warning("No device detected (attempt %d/%d)", attempt, max_attempts)
+                sleep(retry_delay)
+                continue
+            self.connected = True
             # verify we are connected
             if not self.wait_for_boot(timeout=boot_timeout):
+                self.connected = False
                 raise ADBCommunicationError(
                     f"Timeout ({boot_timeout}s) waiting for device to boot"
                 )
             result = self.shell(["whoami"], device_required=False, timeout=30)
+            # check connection attempt failed
             if result.exit_code != 0 or not result.output:
-                self.connected = False
+                LOG.debug("connection failed (attempt: %d/%d)", attempt, max_attempts)
                 if attempt == max_attempts:
-                    raise ADBSessionError(
-                        "Device in a bad state, try disconnect & reboot"
-                    )
+                    LOG.error("Device is in a bad state, try disconnect & reboot")
+                    raise ADBSessionError("Device in invalid state")
                 continue
             self._root = result.output.splitlines()[-1] == "root"
-            # collect CPU and OS info
-            if self._os_version is None:
-                self._os_version = self.shell(
-                    ["getprop", "ro.build.version.release"]
-                ).output
-            if self._cpu_arch is None:
-                self._cpu_arch = self.shell(["getprop", "ro.product.cpu.abi"]).output
             # check SELinux mode
             if self._root and self.get_enforce():
                 if set_enforce_called:
+                    self.connected = False
                     raise ADBSessionError("set_enforce(0) failed!")
                 # set SELinux to run in permissive mode
                 self.set_enforce(0)
@@ -411,31 +400,38 @@ class ADBSession:
                 self.shell(["start"])
                 # put the device in a known state
                 self.call(["reconnect"], timeout=30)
-                self.connected = False
                 set_enforce_called = True
                 attempt -= 1
                 continue
-            if not as_root or self._root:
-                LOG.debug(
-                    "connected device running Android %s (%s)",
-                    self._os_version,
-                    self._cpu_arch,
-                )
-                break
-            # enable root
-            assert as_root, "Should not be here if root is not requested"
-            if self.call(["root"], timeout=30).exit_code == 0:
-                self.connected = False
-                # only skip attempt to call root once
-                if not root_called:
-                    root_called = True
-                    attempt -= 1
-                    continue
-            else:
-                LOG.warning("Failed root login attempt")
-        if self.connected and as_root and not self._root:
-            raise ADBSessionError("Could not enable root")
-        return self.connected
+            # enable root if needed
+            if as_root and not self._root:
+                if self.call(["root"], timeout=30).exit_code == 0:
+                    # only skip attempt to call root once
+                    if not root_called:
+                        root_called = True
+                        attempt -= 1
+                else:
+                    LOG.warning("Failed root login attempt")
+                continue
+            # connected!
+            break
+        else:
+            # failed to connect
+            self.connected = False
+            return False
+
+        assert self.connected
+        # collect system info
+        self.device_id = self.shell(["settings", "get", "secure", "android_id"]).output
+        cpu_arch = self.shell(["getprop", "ro.product.cpu.abi"]).output
+        os_version = self.shell(["getprop", "ro.build.version.release"]).output
+        LOG.debug(
+            "connected to device (%s) running Android %s (%s)",
+            self.device_id,
+            os_version,
+            cpu_arch,
+        )
+        return True
 
     @classmethod
     def create(
