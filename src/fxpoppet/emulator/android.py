@@ -15,7 +15,7 @@ from pathlib import Path
 from platform import system
 from shutil import copy, rmtree
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
-from subprocess import DEVNULL, Popen, TimeoutExpired, check_output
+from subprocess import DEVNULL, Popen, check_output, run
 from tempfile import TemporaryDirectory
 from time import perf_counter, sleep
 from urllib.parse import urlparse
@@ -517,36 +517,30 @@ class AndroidEmulator:
             None
         """
         assert boot_timeout > 0
+        cmd = (
+            str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
+            "shell",
+            "getprop",
+            "sys.boot_completed",
+        )
+        LOG.debug("waiting for device to boot...")
         deadline = perf_counter() + boot_timeout
-        # wait for adb port so we can use wait-for-device
-        with socket(AF_INET, SOCK_STREAM) as sock:
-            sock.settimeout(1)
-            while True:
-                with suppress(ConnectionError, TimeoutError):
-                    sock.connect(("127.0.0.1", port))
-                    break
-                if proc.poll() is not None:
-                    raise AndroidEmulatorError("Incomplete emulator launch.")
-                if deadline <= perf_counter():
-                    raise AndroidEmulatorError("Timeout waiting for ADB port.")
-                sleep(1)
-        # use adb wait-for-device to wait for device to boot
-        try:
-            check_output(
-                [
-                    str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
-                    "wait-for-device",
-                    "shell",
-                    "while [[ -z $(getprop sys.boot_completed) ]];do sleep 1;done",
-                ],
-                timeout=boot_timeout,
+        while True:
+            adb_result = run(
+                cmd,
                 env={"ANDROID_SERIAL": f"emulator-{port:d}"},
+                capture_output=True,
+                check=False,
+                timeout=30,
             )
-        except TimeoutExpired:
-            raise AndroidEmulatorError("Emulator failed to boot in time.") from None
-
-        if proc.poll() is not None:
-            raise AndroidEmulatorError("Failed to launch emulator.")
+            if adb_result.returncode == 0 and adb_result.stdout.strip() == b"1":
+                LOG.debug("device booted")
+                break
+            if proc.poll() is not None:
+                raise AndroidEmulatorError("Failed to launch emulator.")
+            if perf_counter() >= deadline:
+                raise AndroidEmulatorError("Emulator failed to boot in time.")
+            sleep(1)
 
     def relaunch(self) -> AndroidEmulator:
         """Create a new AndroidEmulator object created with the same parameters used to
@@ -690,7 +684,7 @@ class AndroidEmulator:
             None
         """
         LOG.info("Initiating emulator shutdown")
-        # terminate handled and the emulator attempts a clean shutdown
+        # terminate is handled and the emulator attempts a clean shutdown
         self.terminate()
 
     @staticmethod
@@ -841,7 +835,7 @@ def main(argv: list[str] | None = None) -> None:
     aparser.add_argument(
         "--boot-timeout",
         "-t",
-        default=60,
+        default=120,
         type=float,
         help=(
             "Time to wait for Android to boot before retrying emulator launch "
@@ -899,8 +893,6 @@ def main(argv: list[str] | None = None) -> None:
             LOG.info("Android emulator is running on port %d", port)
             try:
                 emu.wait()
-            except KeyboardInterrupt:
-                LOG.info("Aborting...")
             finally:
                 if emu.poll() is None:
                     emu.shutdown()
@@ -909,6 +901,8 @@ def main(argv: list[str] | None = None) -> None:
                     emu.wait(timeout=120)
                 finally:
                     emu.cleanup()
+        except KeyboardInterrupt:
+            LOG.info("Aborting...")
         finally:
             AndroidEmulator.remove_avd(avd_name)
 
