@@ -174,7 +174,7 @@ class ADBSession:
         return Path(installed_bin)
 
     @staticmethod
-    def _call_adb(cmd: Sequence[str], timeout: int | None = None) -> ADBResult:
+    def _call_adb(cmd: Sequence[str], timeout: int) -> ADBResult:
         """Wrapper to make calls to ADB. Launches ADB in a subprocess and collects
         output. If timeout is specified and elapses the ADB subprocess is terminated.
         This function is only meant to be called directly by ADBSession.call().
