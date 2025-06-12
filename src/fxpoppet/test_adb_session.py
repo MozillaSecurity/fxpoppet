@@ -35,7 +35,7 @@ def test_adb_session_01(mocker, result):
         autospec=True,
         side_effect=result,
     )
-    adb_result = ADBSession._call_adb(["test"])
+    adb_result = ADBSession._call_adb(["test"], timeout=1)
     if isinstance(result, TimeoutExpired):
         assert adb_result.exit_code == 1
         assert adb_result.output == ""
