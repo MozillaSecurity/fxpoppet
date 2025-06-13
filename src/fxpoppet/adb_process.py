@@ -245,7 +245,7 @@ class ADBProcess:
         Returns:
             True if the browser was successfully launched otherwise False.
         """
-        LOG.debug("launching - url: %s", url)
+        LOG.debug("launching (%ds): %s", launch_timeout, url)
         assert self._launches > -1, "clean_up() has been called"
         assert self._pid is None, "Process is already running"
         assert self.reason is not None, "Process is already running"

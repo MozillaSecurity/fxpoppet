@@ -294,17 +294,22 @@ class ADBSession:
                 raise ADBCommandError(f"Invalid ADB command '{' '.join(args)}'")
             if result.output.startswith("adb: usage:"):
                 raise ADBCommandError(result.output)
-            if device_required and (
-                result.output.startswith("error: closed")
-                or result.output.startswith("error: device offline")
-                or result.output.startswith("error: no devices/emulators found")
-            ):
-                LOG.error("ADB call to device %s failed", self.device_id)
-                raise ADBCommunicationError("No device detected!")
+            if device_required:
+                if result.output.startswith("error: device offline"):
+                    LOG.error("ADB call failed: device offline (%s)", self.device_id)
+                    raise ADBCommunicationError("Device offline")
+                if result.output.startswith("error: no devices/emulators found"):
+                    LOG.error("ADB call failed: device not found (%s)", self.device_id)
+                    raise ADBCommunicationError("Device not found")
+                if result.output.startswith("error: closed"):
+                    LOG.error("ADB call failed: device closed (%s)", self.device_id)
+                    raise ADBCommunicationError("Device closed")
+            if result.exit_code != 1:
+                LOG.warning("ADB exit code: %d", result.exit_code)
         return result
 
     def clear_logs(self) -> bool:
-        """Call 'adb logcat --clear' to wipe logs
+        """Call 'adb logcat --clear' to wipe logs.
 
         Args:
             None
@@ -377,9 +382,7 @@ class ADBSession:
             # verify we are connected
             if not self.wait_for_boot(timeout=boot_timeout):
                 self.connected = False
-                raise ADBCommunicationError(
-                    f"Timeout ({boot_timeout}s) waiting for device to boot"
-                )
+                raise ADBCommunicationError("Timeout waiting for device to boot")
             result = self.shell(["whoami"], device_required=False, timeout=30)
             # check connection attempt failed
             if result.exit_code != 0 or not result.output:
