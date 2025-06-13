@@ -61,26 +61,30 @@ def test_adb_session_01(mocker, result):
         # disconnected device
         (
             ADBResult(1, "error: closed"),
-            "No device detected!",
+            "Device closed",
             ADBCommunicationError,
             True,
         ),
         # disconnected device
         (
             ADBResult(1, "error: device offline"),
-            "No device detected!",
+            "Device offline",
             ADBCommunicationError,
             True,
         ),
         # disconnected device
         (
             ADBResult(1, "error: no devices/emulators found"),
-            "No device detected!",
+            "Device not found",
             ADBCommunicationError,
             True,
         ),
         # success
         (ADBResult(0, "pass"), None, None, True),
+        # command failed
+        (ADBResult(1, "error msg"), None, None, True),
+        # unexpected exit code
+        (ADBResult(2, "foo"), None, None, True),
     ],
 )
 @mark.usefixtures("tmp_session_adb_check")
@@ -92,8 +96,8 @@ def test_adb_session_02(mocker, ret, msg, exc, connected):
     if exc is None:
         session._debug_adb = False
         result = session.call(["test"])
-        assert result.exit_code == 0
-        assert result.output == "pass"
+        assert result.exit_code == ret.exit_code
+        assert result.output == ret.output
     else:
         session._debug_adb = True
         with raises(exc, match=msg):
@@ -560,7 +564,7 @@ def test_adb_session_14(tmp_path, mocker):
     pkg_file.write_bytes(b"\n")
     with ZipFile(apk_file, mode="w") as zfp:
         zfp.write(str(pkg_file), "package-name.txt")
-    with raises(ADBSessionError):
+    with raises(ADBSessionError, match="Failed to install"):
         session.install(apk_file)
     # good apk
     pkg_file = tmp_path / "package-name.txt"
@@ -571,7 +575,10 @@ def test_adb_session_14(tmp_path, mocker):
     with ZipFile(apk_file, mode="w") as zfp:
         zfp.write(str(pkg_file), "package-name.txt")
     assert session.install(apk_file)
-    # TODO: failed to get package name
+    # get package name failed
+    mocker.patch("fxpoppet.adb_session.ADBSession.get_package_name", return_value=None)
+    with raises(ADBSessionError, match="Could not find APK package name"):
+        session.install(apk_file)
 
 
 @mark.usefixtures("tmp_session_adb_check")
@@ -1274,6 +1281,51 @@ def test_adb_session_41(mocker):
     session.install_file(
         Path("a/b"), PurePosixPath("/sdcard"), mode="777", context="foo"
     )
+
+
+@mark.usefixtures("tmp_session_adb_check")
+def test_adb_session_42(mocker):
+    """test ADBSession.connect() timeout"""
+    mocker.patch("fxpoppet.adb_session.sleep")
+    mocker.patch("fxpoppet.adb_session.time", side_effect=range(3))
+    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, ""))
+    mocker.patch("fxpoppet.adb_session.ADBSession.devices", return_value={"foo": "bar"})
+    with raises(ADBCommunicationError, match="Timeout waiting for device to boot"):
+        ADBSession("127.0.0.1").connect(boot_timeout=1)
+
+
+@mark.usefixtures("tmp_session_adb_check")
+def test_adb_session_43(mocker):
+    """test ADBSession.connect() set enforce failed"""
+    mocker.patch("fxpoppet.adb_session.ADBSession.wait_for_boot")
+    mocker.patch("fxpoppet.adb_session.ADBSession.get_enforce")
+    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, ""))
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.shell", return_value=ADBResult(0, "root")
+    )
+    mocker.patch("fxpoppet.adb_session.ADBSession.devices", return_value={"foo": "bar"})
+    with raises(ADBSessionError, match=r"set_enforce\(0\) failed!"):
+        ADBSession("127.0.0.1").connect(as_root=True, boot_timeout=1)
+
+
+@mark.parametrize(
+    "effect",
+    [
+        # failed
+        (ADBResult(1, ""),),
+        # not supported
+        ADBCommandError("Invalid ADB command ..."),
+    ],
+)
+@mark.usefixtures("tmp_session_adb_check")
+def test_adb_session_44(mocker, effect):
+    """test ADBSession.disconnect() unroot"""
+    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=effect)
+    session = ADBSession()
+    session.connected = True
+    session._root = True
+    session.disconnect()
+    assert not session.connected
 
 
 @mark.parametrize(
