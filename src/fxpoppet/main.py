@@ -99,8 +99,15 @@ def main(args: Namespace) -> int:
                 ["settings", "put", "global", "transition_animation_scale", "0"]
             )
             session.shell(["settings", "put", "global", "window_animation_scale", "0"])
-            # keep device awake
-            session.shell(["svc", "power", "stayon", "true"])
+            # prevent device from throttling
+            session.shell(["settings", "put", "global", "device_idle_enabled", "0"])
+            session.shell(
+                ["settings", "put", "global", "background_process_limit", "0"]
+            )
+            session.shell(["dumpsys", "deviceidle", "disable"])
+            # shutoff screen to prevent GPU stability related issues (emulator)
+            # surfaceflinger high CPU/hang workaround
+            session.shell(["input", "keyevent", "26"])
         if args.airplane_mode is not None:
             LOG.debug("Setting airplane mode (%d)...", args.airplane_mode)
             session.airplane_mode = args.airplane_mode == 1
