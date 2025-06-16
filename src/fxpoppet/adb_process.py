@@ -349,6 +349,8 @@ class ADBProcess:
                 raise ADBLaunchError(f"Could not launch '{self._package}'")
             self._pid = self._session.get_pid(self._package)
             bootstrapper.wait(self.is_healthy, url=url)
+            # prevent power management and backgrounding
+            self._session.shell(["am", "set-inactive", self._package, "false"])
         finally:
             self._session.reverse_remove(bootstrapper.port)
             bootstrapper.close()
