@@ -199,15 +199,8 @@ def test_adb_session_06(mocker):
             shell_cmd = cmd[4:]
             if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "ro.build.version.release":
-                    return ADBResult(0, "9")
-                if shell_cmd[1] == "ro.product.cpu.abi":
-                    return ADBResult(0, "x86_64")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
+            if shell_cmd[0] == "getprop" and shell_cmd[1] == "sys.boot_completed":
+                return ADBResult(0, "1")
             if shell_cmd[0] == "settings" and shell_cmd[3] == "android_id":
                 return ADBResult(0, test_device_id)
             # already root
@@ -262,15 +255,8 @@ def test_adb_session_07(mocker):
                 if test_enforcing:
                     return ADBResult(0, "Enforcing")
                 return ADBResult(0, "Permissive")
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "ro.build.version.release":
-                    return ADBResult(0, "9")
-                if shell_cmd[1] == "ro.product.cpu.abi":
-                    return ADBResult(0, "x86_64")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
+            if shell_cmd[0] == "getprop" and shell_cmd[1] == "sys.boot_completed":
+                return ADBResult(0, "1")
             if shell_cmd[0] == "setenforce":
                 test_enforcing = False
                 return ADBResult(0, "")
@@ -327,15 +313,8 @@ def test_adb_session_08(mocker):
             shell_cmd = cmd[4:]
             if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "ro.build.version.release":
-                    return ADBResult(0, "7.1.2")
-                if shell_cmd[1] == "ro.product.cpu.abi":
-                    return ADBResult(0, "x86")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
+            if shell_cmd[0] == "getprop" and shell_cmd[1] == "sys.boot_completed":
+                return ADBResult(0, "1")
             if shell_cmd[0] == "settings" and shell_cmd[3] == "android_id":
                 return ADBResult(0, "492d81f7e1ffee59")
             if shell_cmd[0] == "whoami":
@@ -376,8 +355,17 @@ def test_adb_session_09(mocker):
     assert not ADBSession("127.0.0.1").connect()
 
 
+@mark.parametrize(
+    "android_id, user_id",
+    [
+        # failed to get android ID
+        (ADBResult(1, ""), ADBResult(0, "user")),
+        # failed to get user ID
+        (ADBResult(0, "1234567890abcdef"), ADBResult(1, "")),
+    ],
+)
 @mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_10(mocker):
+def test_adb_session_10(mocker, android_id, user_id):
     """test ADBSession.connect() device in a bad state"""
     mocker.patch("fxpoppet.adb_session.sleep")
 
@@ -390,13 +378,12 @@ def test_adb_session_10(mocker):
         if cmd[1] == "shell":
             # strip "adb shell -n -T"
             shell_cmd = cmd[4:]
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
+            if shell_cmd[0] == "getprop" and shell_cmd[1] == "sys.boot_completed":
+                return ADBResult(0, "1")
+            if shell_cmd[0] == "settings" and shell_cmd[3] == "android_id":
+                return android_id
             if shell_cmd[0] == "whoami":
-                return ADBResult(1, "")
+                return user_id
         raise AssertionError(f"unexpected command {cmd!r}")
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", fake_adb_call)
@@ -451,15 +438,8 @@ def test_adb_session_11(mocker, root, repeat):
             shell_cmd = cmd[4:]
             if shell_cmd[0] == "getenforce":
                 return ADBResult(0, "Permissive")
-            if shell_cmd[0] == "getprop":
-                if shell_cmd[1] == "init.svc.bootanim":
-                    return ADBResult(0, "stopped")
-                if shell_cmd[1] == "ro.build.version.release":
-                    return ADBResult(0, "9")
-                if shell_cmd[1] == "ro.product.cpu.abi":
-                    return ADBResult(0, "x86_64")
-                if shell_cmd[1] == "sys.boot_completed":
-                    return ADBResult(0, "1")
+            if shell_cmd[0] == "getprop" and shell_cmd[1] == "sys.boot_completed":
+                return ADBResult(0, "1")
             if shell_cmd[0] == "settings" and shell_cmd[3] == "android_id":
                 return ADBResult(0, "492d81f7e1ffee59")
             if shell_cmd[0] == "whoami":
@@ -1290,7 +1270,7 @@ def test_adb_session_42(mocker):
     mocker.patch("fxpoppet.adb_session.time", side_effect=range(3))
     mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, ""))
     mocker.patch("fxpoppet.adb_session.ADBSession.devices", return_value={"foo": "bar"})
-    with raises(ADBCommunicationError, match="Timeout waiting for device to boot"):
+    with raises(ADBCommunicationError, match="Device boot timeout exceeded"):
         ADBSession("127.0.0.1").connect(boot_timeout=1)
 
 
