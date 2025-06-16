@@ -836,7 +836,7 @@ class ADBSession:
             cmd.append(f"tcp:{remote}")
         else:
             cmd.append("--remove-all")
-        return self.call(cmd, timeout=10).exit_code == 0
+        return self.call(cmd, device_required=False, timeout=10).exit_code == 0
 
     def sanitizer_options(self, prefix: str, options: Mapping[str, str]) -> None:
         """Set sanitizer options.
