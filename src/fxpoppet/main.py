@@ -101,6 +101,7 @@ def main(args: Namespace) -> int:
             session.shell(["settings", "put", "global", "window_animation_scale", "0"])
             # prevent device from throttling
             session.shell(["settings", "put", "global", "device_idle_enabled", "0"])
+            session.shell(["settings", "put", "global", "low_power", "0"])
             session.shell(
                 ["settings", "put", "global", "background_process_limit", "0"]
             )
