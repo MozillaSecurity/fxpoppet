@@ -398,7 +398,7 @@ class AndroidEmulator:
         xvfb: bool = False,
         target: str | None = None,
         verbose: bool = False,
-        boot_timeout: int = 120,
+        boot_timeout: int = 300,
     ) -> None:
         """Create an AndroidEmulator object.
 
@@ -835,8 +835,8 @@ def main(argv: list[str] | None = None) -> None:
     aparser.add_argument(
         "--boot-timeout",
         "-t",
-        default=120,
-        type=float,
+        default=300,
+        type=int,
         help=(
             "Time to wait for Android to boot before retrying emulator launch "
             "(default: %(default)ss)"
@@ -865,8 +865,6 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.boot_timeout < 0:
         aparser.error("--boot-timeout must be positive")
-    if args.boot_timeout == 0:
-        args.boot_timeout = None
 
     init_logging(debug=args.verbose)
 
