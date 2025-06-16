@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from enum import Enum, auto
 from logging import getLogger
 from os import getenv
@@ -173,6 +174,26 @@ class ADBProcess:
                 self.reason = Reason.CLOSED
             self.profile = None
             self._pid = None
+
+    def cpu_usage(self) -> Generator[tuple[int, float]]:
+        """Collect percentage of CPU usage per package process.
+
+        Args:
+            None
+
+        Yields:
+            PID and the CPU usage as a percentage.
+        """
+        result = self._session.shell(
+            ("top", "-b", "-n", "1", "-m", "30", "-q", "-o", "PID,%CPU,CMDLINE"),
+            device_required=False,
+        )
+        if result.exit_code == 0:
+            for entry in result.output.splitlines():
+                pid, cpu_pct, args = entry.lstrip().split(maxsplit=2)
+                if self._package in args:
+                    with suppress(ValueError):
+                        yield int(pid), float(cpu_pct)
 
     def find_crashreports(self) -> Generator[PurePosixPath]:
         """Scan for crash reports.
