@@ -380,18 +380,26 @@ class ADBSession:
                 continue
             self.connected = True
             # verify we are connected
+            LOG.debug("waiting for device to boot (%ds)...", boot_timeout)
             if not self.wait_for_boot(timeout=boot_timeout):
+                LOG.debug("device failed to boot (%ds)", boot_timeout)
                 self.connected = False
-                raise ADBCommunicationError("Timeout waiting for device to boot")
+                raise ADBCommunicationError("Device boot timeout exceeded")
+            # collect android id from device
+            # this also helps to ensure the device is functioning properly
+            result = self.shell(
+                ["settings", "get", "secure", "android_id"], device_required=False
+            )
+            if result.exit_code != 0:
+                LOG.error("Failed to retrieve Android ID")
+                raise ADBSessionError("Device in invalid state")
+            self.device_id = result.output
+            # get active user
             result = self.shell(["whoami"], device_required=False, timeout=30)
-            # check connection attempt failed
             if result.exit_code != 0 or not result.output:
-                LOG.debug("connection failed (attempt: %d/%d)", attempt, max_attempts)
-                if attempt == max_attempts:
-                    LOG.error("Device is in a bad state, try disconnect & reboot")
-                    raise ADBSessionError("Device in invalid state")
-                continue
-            self._root = result.output.splitlines()[-1] == "root"
+                LOG.error("Failed to retrieve active user")
+                raise ADBSessionError("Device in invalid state")
+            self._root = result.output == "root"
             # check SELinux mode
             if self._root and self.get_enforce():
                 if set_enforce_called:
@@ -419,21 +427,11 @@ class ADBSession:
             # connected!
             break
         else:
-            # failed to connect
+            LOG.debug("failed to connect to device")
             self.connected = False
             return False
 
         assert self.connected
-        # collect system info
-        self.device_id = self.shell(["settings", "get", "secure", "android_id"]).output
-        cpu_arch = self.shell(["getprop", "ro.product.cpu.abi"]).output
-        os_version = self.shell(["getprop", "ro.build.version.release"]).output
-        LOG.debug(
-            "connected to device (%s) running Android %s (%s)",
-            self.device_id,
-            os_version,
-            cpu_arch,
-        )
         return True
 
     @classmethod
@@ -922,8 +920,6 @@ class ADBSession:
             if self.shell(cmd, device_required=False).output == "1":
                 return True
             if time() >= deadline:
-                LOG.debug("wait_for_boot() timeout exceeded (%ds)", timeout)
                 break
-            LOG.debug("waiting for device to boot...")
             sleep(poll_wait)
         return False
