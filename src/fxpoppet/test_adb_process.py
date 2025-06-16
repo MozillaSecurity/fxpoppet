@@ -348,3 +348,49 @@ def test_adb_process_prefs_to_dict(tmp_path, input_data, result):
     prefs_js = tmp_path / "prefs.js"
     prefs_js.write_text(input_data)
     assert ADBProcess.prefs_to_dict(prefs_js) == result
+
+
+def test_adb_process_cpu_usage(mocker):
+    """test ADBProcess.cpu_usage()"""
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    package = "org.test.app"
+
+    # no output
+    fake_session.shell.return_value = ADBResult(1, "")
+    with ADBProcess(package, fake_session) as proc:
+        assert not any(proc.cpu_usage())
+
+    # no entries
+    fake_session.shell.return_value = ADBResult(0, "368  0.0 zygote64\n")
+    with ADBProcess(package, fake_session) as proc:
+        assert not any(proc.cpu_usage())
+
+    # entries (unordered)
+    top_output = (
+        "368  0.0 zygote64\n"
+        " 1042  0.0 webview_zygote\n"
+        "11068  3.5 top -b -n 1 -m 20 -q -o PID,%CPU,CMDLINE\n"
+        "  571  3.5 system_server\n"
+        f"10004  0.0 {package}:tab26\n"
+        f"10003  2.1 {package}:gpu\n"
+        f"10002  4.1 {package}:crashhelper\n"
+        f"10001  54.3 {package}\n"
+        "  476  0.0 media.swcodec oid.media.swcodec/bin/mediaswcodec\n"
+        "  469  0.0 media.metrics diametrics\n"
+        "  468  0.0 media.extractor aextractor\n"
+    )
+    fake_session.shell.return_value = ADBResult(0, top_output)
+    with ADBProcess(package, fake_session) as proc:
+        usage = tuple(proc.cpu_usage())
+        assert len(usage) == 4
+        for pid, cpu in usage:
+            if pid == 10001:
+                assert cpu == 54.3
+            elif pid == 10002:
+                assert cpu == 4.1
+            elif pid == 10003:
+                assert cpu == 2.1
+            elif pid == 10004:
+                assert cpu == 0
+            else:
+                raise AssertionError("top output parsing failed")
