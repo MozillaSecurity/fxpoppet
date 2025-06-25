@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
-from contextlib import suppress
 from enum import Enum, auto
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
@@ -31,8 +30,8 @@ from xml.etree.ElementTree import (
 from fuzzfetch.download import download_url, get_url, iec
 from fuzzfetch.extract import extract_zip
 
-with suppress(ImportError):
-    from xvfbwrapper import Xvfb
+if system() == "Linux":
+    from xvfbwrapper import Xvfb  # pylint: disable=import-error
 
 __author__ = "Jesse Schwartzentruber"
 
@@ -846,9 +845,12 @@ def main(argv: list[str] | None = None) -> None:
     disp_group.add_argument(
         "--headless", action="store_true", help="Run emulator in headless mode"
     )
-    disp_group.add_argument(
-        "--xvfb", action="store_true", help="Run emulator with Xvfb"
-    )
+    if system() == "Linux":
+        disp_group.add_argument(
+            "--xvfb", action="store_true", help="Run emulator with Xvfb"
+        )
+    else:
+        disp_group.set_defaults(xvfb=False)
     aparser.add_argument(
         "--skip-dl",
         "-s",
