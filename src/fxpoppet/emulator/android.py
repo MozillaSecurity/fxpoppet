@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from contextlib import suppress
 from enum import Enum, auto
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
@@ -14,7 +15,7 @@ from pathlib import Path
 from platform import system
 from shutil import copy, rmtree
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
-from subprocess import DEVNULL, Popen, check_output, run
+from subprocess import DEVNULL, Popen, TimeoutExpired, check_output, run
 from tempfile import TemporaryDirectory
 from time import perf_counter, sleep
 from urllib.parse import urlparse
@@ -463,7 +464,7 @@ class AndroidEmulator:
 
         if xvfb:
             try:
-                self.xvfb: Xvfb | None = Xvfb(width=1280, height=1024)
+                self.xvfb: Xvfb | None = Xvfb(width=1280, height=1024, timeout=60)
             except NameError:
                 LOG.error("Missing xvfbwrapper")
                 raise
@@ -490,15 +491,19 @@ class AndroidEmulator:
 
         try:
             self.boot_wait(emu, port, boot_timeout)
-        except:
-            emu.terminate()
-            try:
-                # this should not hang, timeout is here just in case.
-                emu.wait(120)
-            finally:
-                if self.xvfb is not None:
-                    self.xvfb.stop()
-            raise
+        except Exception as exc:
+            if emu.poll() is None:
+                emu.terminate()
+                try:
+                    # this should not hang (but does), timeout is here just in case.
+                    emu.wait(120)
+                except TimeoutExpired:
+                    emu.kill()
+                    with suppress(TimeoutExpired):
+                        emu.wait(10)
+            if self.xvfb is not None:
+                self.xvfb.stop()
+            raise exc
 
         self.emu = emu
         self.pid = emu.pid
