@@ -43,36 +43,46 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     log_level_map = {"ERROR": ERROR, "WARN": WARNING, "INFO": INFO, "DEBUG": DEBUG}
 
     parser = ArgumentParser(description="ADB Device Wrapper")
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument(
         "--airplane-mode",
         choices=(0, 1),
         type=int,
         help="Enable(1) or disable(0) airplane mode",
     )
-    parser.add_argument("--install", type=Path, help="APK to install")
-    parser.add_argument("--launch", type=Path, help="APK to launch")
+    mode_group.add_argument("--install", type=Path, help="APK to install")
+    mode_group.add_argument("--launch", type=Path, help="APK to launch")
+    mode_group.add_argument(
+        "--prep", type=Path, help="APK to use to prepare the device for fuzzing."
+    )
     parser.add_argument(
         "--log-level",
         choices=sorted(log_level_map),
         default="INFO",
         help="Configure console logging (default: %(default)s)",
     )
-    parser.add_argument("--logs", type=Path, help="Location to save logs")
-    parser.add_argument("--ip", help="IP address of target device")
     parser.add_argument(
         "--non-root", action="store_true", help="Connect as non-root user"
     )
     parser.add_argument(
-        "--port", default=5555, type=int, help="ADB listening port on target device"
-    )
-    parser.add_argument(
-        "--prep", type=Path, help="APK to use to prepare the device for fuzzing."
+        "-s",
+        "--serial",
+        default=getenv("ANDROID_SERIAL", None),
+        help="Device to use. Use 'adb devices' to list available devices. "
+        "By default ANDROID_SERIAL is used (default: %(default)s)",
     )
 
     # sanity check args
     args = parser.parse_args(argv)
-    if not any((args.airplane_mode is not None, args.install, args.launch, args.prep)):
-        parser.error("No options selected")
+    if args.serial is None:
+        devices = ADBSession("").devices(any_state=False)
+        if len(devices) > 1:
+            parser.error(
+                "Multiple devices detected. "
+                f"Use '--serial' to select from: {', '.join(devices)}"
+            )
+        elif devices:
+            args.serial, _ = devices.popitem()
     for apk in (args.install, args.launch, args.prep):
         if apk is not None and not apk.is_file():
             parser.error(f"Invalid APK '{apk}'")
@@ -83,10 +93,10 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
 def main(args: Namespace) -> int:
     """Main function"""
     configure_logging(args.log_level)
-    LOG.info("Connecting to device...")
-    session = ADBSession.create(args.ip, args.port, as_root=not args.non_root)
+    LOG.info("Connecting to device (%s)...", args.serial)
+    session = ADBSession.create(args.serial, as_root=not args.non_root)
     if session is None:
-        LOG.error("Failed to connect to IP: %s on port: %d", args.ip, args.port)
+        LOG.error("Failed to connect to %s", args.serial)
         return 1
     try:
         if args.prep is not None:
@@ -131,7 +141,7 @@ def main(args: Namespace) -> int:
             # set wait for debugger
             # session.shell(["am", "set-debug-app", "-w", "--persistent", package])
             LOG.info("Installed %s.", package)
-        if args.launch:
+        if args.launch is not None:
             pkg_name = ADBSession.get_package_name(args.launch)
             if pkg_name is None:
                 LOG.error("Failed to lookup package name in '%s'", args.install)

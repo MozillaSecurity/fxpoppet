@@ -11,7 +11,6 @@ from os import getenv
 from pathlib import Path, PurePosixPath
 from platform import system
 from shutil import which
-from socket import inet_aton
 from subprocess import PIPE, STDOUT, TimeoutExpired, check_output, run
 from tempfile import TemporaryDirectory
 from time import sleep, time
@@ -82,8 +81,6 @@ class ADBSession:
     Attributes:
         _adb_bin: ADB binary to use.
         _debug_adb: Include ADB output in debug output.
-        _ip_addr: Target device IP address.
-        _port: ADB listening port.
         _root: Connected as root user.
         connected: ADB connection state.
         device_id: Unique Android ID.
@@ -93,35 +90,21 @@ class ADBSession:
     __slots__ = (
         "_adb_bin",
         "_debug_adb",
-        "_ip_addr",
-        "_port",
         "_root",
+        "_serial",
         "connected",
         "device_id",
         "symbols",
     )
 
-    def __init__(self, ip_addr: str | None = None, port: int = 5555) -> None:
+    def __init__(self, serial: str) -> None:
         self._adb_bin = self._adb_check()
         self._debug_adb = getenv("SHOW_ADB_DEBUG", "0") != "0"
-        self._ip_addr: str | None = None
-        self._port: int | None = None
         self._root = False
+        self._serial = serial
         self.connected = False
         self.device_id: str | None = None
         self.symbols: dict[str, Path] = {}
-
-        if ip_addr is not None:
-            LOG.debug("creating IP based session")
-            try:
-                if ip_addr != "localhost":
-                    inet_aton(ip_addr)
-            except (OSError, TypeError):
-                raise ValueError("Invalid IP Address") from None
-            self._ip_addr = ip_addr
-            if not 0x10000 > port > 1024:
-                raise ValueError("Port must be valid integer between 1025 and 65535")
-            self._port = port
 
     @classmethod
     def _aapt_check(cls) -> Path:
@@ -171,7 +154,9 @@ class ADBSession:
         return Path(installed_bin)
 
     @staticmethod
-    def _call_adb(cmd: Sequence[str], timeout: int) -> ADBResult:
+    def _call_adb(
+        cmd: Sequence[str], timeout: int = 10, serial: str | None = None
+    ) -> ADBResult:
         """Wrapper to make calls to ADB. Launches ADB in a subprocess and collects
         output. If timeout is specified and elapses the ADB subprocess is terminated.
         This function is only meant to be called directly by ADBSession.call().
@@ -185,7 +170,7 @@ class ADBSession:
         """
         try:
             result = run(
-                cmd,
+                (cmd[0], "-s", serial, *cmd[1:]) if serial else (cmd[0], *cmd[1:]),
                 check=False,
                 encoding="utf-8",
                 errors="replace",
@@ -282,7 +267,9 @@ class ADBSession:
         # a few adb commands do not require a connection
         if not self.connected and args[0] not in {"connect", "devices", "disconnect"}:
             raise ADBCommunicationError("ADB session is not connected!")
-        result = self._call_adb((str(self._adb_bin), *args), timeout=timeout)
+        result = self._call_adb(
+            (str(self._adb_bin), *args), timeout=timeout, serial=self._serial
+        )
         if self._debug_adb:
             LOG.debug(
                 "=== adb start ===\n%s\n=== adb end, returned %d ===",
@@ -367,15 +354,8 @@ class ADBSession:
             attempt += 1
             # attempt to connect to device
             self.connected = False
-            if self._ip_addr is not None:
-                addr = f"{self._ip_addr}:{self._port}"
-                LOG.debug("connecting to '%s'", addr)
-                if self.call(["connect", addr], timeout=30).exit_code != 0:
-                    LOG.warning("connection attempt #%d failed", attempt)
-                    sleep(retry_delay)
-                    continue
-            elif not self.devices():
-                LOG.warning("No device detected (attempt %d/%d)", attempt, max_attempts)
+            if self._serial not in self.devices(any_state=False):
+                LOG.warning("Device not found (attempt %d/%d)", attempt, max_attempts)
                 sleep(retry_delay)
                 continue
             self.connected = True
@@ -437,8 +417,7 @@ class ADBSession:
     @classmethod
     def create(
         cls,
-        ip_addr: str | None = None,
-        port: int = 5555,
+        serial: str,
         as_root: bool = True,
         max_attempts: int = 10,
         retry_delay: int = 1,
@@ -446,8 +425,7 @@ class ADBSession:
         """Create a ADBSession and connect to a device via ADB.
 
         Args:
-            ip_addr: IP address of device to connect to if using TCP/IP.
-            port: Port to use (TCP/IP only).
+            serial: Serial of Android device to connect to.
             as_root: Attempt to enable root.
             max_attempts: Number of attempts to connect to the device.
             retry_delay: Number of seconds to wait between attempts.
@@ -455,20 +433,17 @@ class ADBSession:
         Returns:
             A connected ADBSession object or None
         """
-        session = cls(ip_addr, port)
+        session = cls(serial)
         if session.connect(
             as_root=as_root, max_attempts=max_attempts, retry_delay=retry_delay
         ):
             return session
         return None
 
-    def devices(
-        self, all_devices: bool = False, any_state: bool = True
-    ) -> dict[str, str]:
+    def devices(self, any_state: bool = True) -> dict[str, str]:
         """Devices visible to ADB.
 
         Args:
-            all_devices: Don't filter devices using ANDROID_SERIAL environment variable.
             any_state: Include devices in a state other than "device".
 
         Returns:
@@ -478,22 +453,15 @@ class ADBSession:
         devices: dict[str, str] = {}
         if result.exit_code != 0:
             return devices
-        target_device = getenv("ANDROID_SERIAL", None) if not all_devices else None
         # skip header on the first line
         for entry in result.output.splitlines()[1:]:
             try:
                 name, state = entry.split()
             except ValueError:
                 continue
-            if target_device is not None and name != target_device:
-                continue
             if not any_state and state != "device":
                 continue
             devices[name] = state
-        if target_device is None and not all_devices and len(devices) > 1:
-            raise ADBSessionError(
-                "Multiple devices available and ANDROID_SERIAL not set"
-            )
         return devices
 
     def disconnect(self, unroot: bool = True) -> None:
@@ -517,8 +485,6 @@ class ADBSession:
                 LOG.warning("'unroot' failed")
             except ADBCommandError:
                 LOG.warning("'unroot' not support by ADB")
-        elif self._ip_addr is not None:
-            self.call(["disconnect", f"{self._ip_addr}:{self._port}"], timeout=30)
         self.connected = False
 
     def get_enforce(self) -> bool:

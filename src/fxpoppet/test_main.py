@@ -1,8 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-from pathlib import Path
-
 from pytest import mark, raises
 
 from .main import main, parse_args
@@ -11,7 +9,6 @@ from .main import main, parse_args
 @mark.parametrize(
     "args, msg",
     [
-        ([], "error: No options selected"),
         (["--install", "missing"], "error: Invalid APK 'missing'"),
         (["--launch", "missing"], "error: Invalid APK 'missing'"),
         (["--prep", "missing"], "error: Invalid APK 'missing'"),
@@ -20,7 +17,7 @@ from .main import main, parse_args
 def test_parse_01(capsys, args, msg):
     """test parse_args()"""
     with raises(SystemExit):
-        parse_args(argv=args)
+        parse_args(argv=["-s", "fake-serial", *args])
     assert msg in capsys.readouterr()[1]
 
 
@@ -28,15 +25,35 @@ def test_parse_02(tmp_path):
     """test parse_args()"""
     apk = tmp_path / "fake.apk"
     apk.touch()
-    assert parse_args(argv=["--prep", str(apk)])
+    assert parse_args(argv=["-s", "fake-serial", "--prep", str(apk)])
+
+
+def test_parse_03(capsys, mocker, tmp_path):
+    """test parse_args() - missing --serial"""
+    session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
+    session_cls.return_value.devices.return_value = {
+        "emu-1234": "device",
+        "emu-5678": "device",
+    }
+    apk = tmp_path / "fake.apk"
+    apk.touch()
+    with raises(SystemExit):
+        parse_args(argv=["--prep", str(apk)])
+    assert "error: Multiple devices detected." in capsys.readouterr()[1]
+
+    session_cls.reset_mock()
+    session_cls.return_value.devices.return_value = {"emu-1234": "device"}
+    args = parse_args(argv=["--prep", str(apk)])
+    assert args.serial == "emu-1234"
 
 
 def test_main_01(mocker):
     """test main() - create session failed"""
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.create.return_value = None
-    args = mocker.Mock(ip=None, non_root=False, prep=None, port=12345)
+    args = mocker.Mock(non_root=False, prep=None)
     assert main(args) == 1
+    assert session_cls.create.call_count == 1
 
 
 def test_main_02(mocker):
@@ -46,10 +63,8 @@ def test_main_02(mocker):
         airplane_mode=1,
         launch=None,
         install=None,
-        ip=None,
         non_root=False,
         prep=None,
-        port=12345,
     )
     assert main(args) == 0
     assert session_cls.create.call_count == 1
@@ -81,10 +96,8 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
         airplane_mode=None,
         launch=None,
         install=apk,
-        ip=None,
         non_root=False,
         prep=None,
-        port=12345,
     )
     assert main(args) == result
     assert session_cls.create.call_count == 1
@@ -112,27 +125,23 @@ def test_main_04(mocker, tmp_path, pkg, result):
         airplane_mode=None,
         launch=tmp_path / "fake.apk",
         install=None,
-        ip=None,
         non_root=False,
         prep=None,
-        port=12345,
     )
     assert main(args) == result
     assert session_cls.create.call_count == 1
     assert session_obj.disconnect.call_count == 1
 
 
-def test_main_05(mocker):
+def test_main_05(mocker, tmp_path):
     """test main() - prep"""
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     args = mocker.Mock(
         airplane_mode=None,
         launch=None,
         install=None,
-        ip=None,
         non_root=False,
-        prep=Path("fake.apk"),
-        port=12345,
+        prep=tmp_path / "fake.apk",
     )
     assert main(args) == 0
     assert session_cls.create.call_count == 1

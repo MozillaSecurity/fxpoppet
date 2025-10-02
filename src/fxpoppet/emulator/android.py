@@ -481,7 +481,7 @@ class AndroidEmulator:
                 env["XAUTHORITY"] = getenv("XAUTHORITY", "")
         env["ANDROID_AVD_HOME"] = str(PATHS.avd_home)
 
-        LOG.info("Launching Android emulator with snapshot=%s", self.snapshot.name)
+        LOG.debug("launching emulator (port=%d, snapshot=%s)", port, self.snapshot.name)
         emu = Popen(  # pylint: disable=consider-using-with
             [str(PATHS.sdk_root / "emulator" / f"emulator{EXE_SUFFIX}"), *args],
             env=env,
@@ -687,7 +687,6 @@ class AndroidEmulator:
         Returns:
             None
         """
-        LOG.info("Initiating emulator shutdown")
         # terminate is handled and the emulator attempts a clean shutdown
         self.terminate()
 
@@ -750,9 +749,9 @@ class AndroidEmulator:
         """
         mksd_path = PATHS.sdk_root / "emulator" / f"mksdcard{EXE_SUFFIX}"
         assert mksd_path.is_file(), f"Missing {mksd_path}"
-        LOG.info("Creating AVD '%s'", avd_name)
 
         # create an avd
+        LOG.debug("creating AVD '%s'", avd_name)
         PATHS.avd_home.mkdir(exist_ok=True)
         api_gapi = PATHS.sdk_root / "system-images" / SYS_IMG / "default"
         cls.remove_avd(avd_name)
@@ -885,6 +884,8 @@ def main(argv: list[str] | None = None) -> None:
 
         # Create an AVD and boot it once
         AndroidEmulator.create_avd(avd_name)
+
+        LOG.info("Launching Android emulator...")
         try:
             # Boot the AVD
             emu = AndroidEmulator(
@@ -895,12 +896,13 @@ def main(argv: list[str] | None = None) -> None:
                 headless=args.headless,
                 xvfb=args.xvfb,
             )
-            LOG.info("Android emulator is running on port %d", port)
+            LOG.info("Android emulator is running as 'emulator-%d'", port)
             try:
                 emu.wait()
             finally:
+                LOG.info("Initiating emulator shutdown")
                 if emu.poll() is None:
-                    emu.shutdown()
+                    emu.terminate()
                 try:
                     # this should never timeout
                     emu.wait(timeout=120)
