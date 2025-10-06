@@ -58,6 +58,8 @@ def _get_android_sdk() -> Path:
     return Path.home() / "Android" / "Sdk"
 
 
+AAPT_BIN: str | None = None
+ADB_BIN: str | None = None
 ANDROID_SDK_ROOT = _get_android_sdk()
 DEVICE_TMP = PurePosixPath("/data/local/tmp")
 
@@ -79,7 +81,6 @@ class ADBSession:
     """ADB Session management.
 
     Attributes:
-        _adb_bin: ADB binary to use.
         _debug_adb: Include ADB output in debug output.
         _root: Connected as root user.
         connected: ADB connection state.
@@ -88,7 +89,6 @@ class ADBSession:
     """
 
     __slots__ = (
-        "_adb_bin",
         "_debug_adb",
         "_root",
         "_serial",
@@ -98,7 +98,6 @@ class ADBSession:
     )
 
     def __init__(self, serial: str) -> None:
-        self._adb_bin = self._adb_check()
         self._debug_adb = getenv("SHOW_ADB_DEBUG", "0") != "0"
         self._root = False
         self._serial = serial
@@ -106,8 +105,8 @@ class ADBSession:
         self.device_id: str | None = None
         self.symbols: dict[str, Path] = {}
 
-    @classmethod
-    def _aapt_check(cls) -> Path:
+    @staticmethod
+    def _aapt_check() -> str:
         """Find Android Asset Packaging Tool (AAPT).
         An OSError is raised if the AAPT executable is not found.
 
@@ -117,19 +116,24 @@ class ADBSession:
         Returns:
             AAPT binary.
         """
-        skd_bin = ANDROID_SDK_ROOT / "android-9" / "aapt"
-        if skd_bin.is_file():
-            LOG.debug("using recommended aapt from '%s'", skd_bin)
-            return skd_bin
-        installed_bin = which("aapt")
-        if installed_bin is None:
-            raise OSError("Please install AAPT")
-        # TODO: update this to check aapt version
-        LOG.warning("Using aapt binary from '%s'", installed_bin)
-        return Path(installed_bin)
+        # pylint: disable=global-statement
+        global AAPT_BIN
+        if AAPT_BIN is None:
+            skd_bin = ANDROID_SDK_ROOT / "android-9" / "aapt"
+            if skd_bin.is_file():
+                LOG.debug("using recommended aapt from '%s'", skd_bin)
+                AAPT_BIN = str(skd_bin)
+            else:
+                installed_bin = which("aapt")
+                if installed_bin is None:
+                    raise OSError("Please install AAPT")
+                # TODO: update this to check aapt version
+                LOG.warning("Using aapt binary from '%s'", installed_bin)
+                AAPT_BIN = installed_bin
+        return AAPT_BIN
 
-    @classmethod
-    def _adb_check(cls) -> Path:
+    @staticmethod
+    def _adb_check() -> str:
         """Find Android Debug Bridge (ADB).
         An OSError is raised if the ADB executable is not found.
 
@@ -139,23 +143,27 @@ class ADBSession:
         Returns:
             ADB binary.
         """
-        sdk_bin = ANDROID_SDK_ROOT / "platform-tools" / "adb"
-        if sdk_bin.is_file():
-            LOG.debug("using recommended adb from '%s'", sdk_bin)
-            return sdk_bin
-        installed_bin = which("adb")
-        if installed_bin is None:
-            raise OSError("Please install ADB")
-        # TODO: update this to check adb version
-        LOG.warning("Using adb binary '%s'", installed_bin)
-        LOG.warning("You are not using the recommended ADB install!")
-        LOG.warning("Either run the setup script or proceed with caution.")
-        sleep(5)
-        return Path(installed_bin)
+        # pylint: disable=global-statement
+        global ADB_BIN
+        if ADB_BIN is None:
+            sdk_bin = ANDROID_SDK_ROOT / "platform-tools" / "adb"
+            if sdk_bin.is_file():
+                LOG.debug("using recommended adb from '%s'", sdk_bin)
+                ADB_BIN = str(sdk_bin)
+            else:
+                installed_bin = which("adb")
+                if installed_bin is None:
+                    raise OSError("Please install ADB")
+                # TODO: update this to check adb version
+                LOG.warning("Using adb binary from '%s'", installed_bin)
+                LOG.warning("You are not using the recommended ADB install!")
+                LOG.warning("Either run the setup script or proceed with caution.")
+                ADB_BIN = installed_bin
+        return ADB_BIN
 
-    @staticmethod
+    @classmethod
     def _call_adb(
-        cmd: Sequence[str], timeout: int = 10, serial: str | None = None
+        cls, cmd: Sequence[str], timeout: int = 10, serial: str | None = None
     ) -> ADBResult:
         """Wrapper to make calls to ADB. Launches ADB in a subprocess and collects
         output. If timeout is specified and elapses the ADB subprocess is terminated.
@@ -164,13 +172,15 @@ class ADBSession:
         Args:
             cmd: Full ADB command.
             timeout: Seconds to wait for ADB command to complete.
+            serial: Serial of Android device to connect to.
 
         Returns:
             Exit code and stderr, stdout of ADB call.
         """
+        adb = cls._adb_check()
         try:
             result = run(
-                (cmd[0], "-s", serial, *cmd[1:]) if serial else (cmd[0], *cmd[1:]),
+                (adb, "-s", serial, *cmd) if serial else (adb, *cmd),
                 check=False,
                 encoding="utf-8",
                 errors="replace",
@@ -267,9 +277,7 @@ class ADBSession:
         # a few adb commands do not require a connection
         if not self.connected and args[0] not in {"connect", "devices", "disconnect"}:
             raise ADBCommunicationError("ADB session is not connected!")
-        result = self._call_adb(
-            (str(self._adb_bin), *args), timeout=timeout, serial=self._serial
-        )
+        result = self._call_adb(args, timeout=timeout, serial=self._serial)
         if self._debug_adb:
             LOG.debug(
                 "=== adb start ===\n%s\n=== adb end, returned %d ===",
@@ -372,6 +380,7 @@ class ADBSession:
             )
             if result.exit_code != 0:
                 LOG.error("Failed to retrieve Android ID")
+                self.connected = False
                 raise ADBSessionError("Device in invalid state")
             self.device_id = result.output
             # get active user
@@ -403,10 +412,12 @@ class ADBSession:
                         attempt -= 1
                 else:
                     LOG.warning("Failed root login attempt")
+                self.connected = False
                 continue
             # connected!
             break
         else:
+            # TODO: this should raise
             LOG.debug("failed to connect to device")
             self.connected = False
             return False
