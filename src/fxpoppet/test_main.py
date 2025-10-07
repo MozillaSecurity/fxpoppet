@@ -1,9 +1,36 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from logging import DEBUG, INFO
+
 from pytest import mark, raises
 
-from .main import main, parse_args
+from .main import configure_logging, main, parse_args
+
+
+@mark.parametrize(
+    "env, log_level",
+    [
+        # default log level
+        ("0", INFO),
+        # debug log level
+        ("0", DEBUG),
+        # enable debug log level via env
+        ("1", INFO),
+        # enable debug log level via env
+        ("TRUE", INFO),
+    ],
+)
+def test_configure_logging_01(mocker, env, log_level):
+    """test configure_logging()"""
+    config = mocker.patch("fxpoppet.main.basicConfig", autospec=True)
+    mocker.patch("fxpoppet.main.getenv", autospec=True, return_value=env)
+    configure_logging(log_level)
+    assert config.call_count == 1
+    if env != "0":
+        assert config.call_args[-1]["level"] == DEBUG
+    else:
+        assert config.call_args[-1]["level"] == log_level
 
 
 @mark.parametrize(
@@ -46,14 +73,19 @@ def test_parse_03(capsys, mocker, tmp_path):
     args = parse_args(argv=["--prep", str(apk)])
     assert args.serial == "emu-1234"
 
+    session_cls.return_value.devices.return_value = {}
+    with raises(SystemExit):
+        parse_args(argv=["--prep", str(apk)])
+    assert "error: No device detected." in capsys.readouterr()[1]
+
 
 def test_main_01(mocker):
-    """test main() - create session failed"""
+    """test main() - session connect failed"""
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
-    session_cls.create.return_value = None
+    session_cls.return_value.connected = False
     args = mocker.Mock(non_root=False, prep=None)
     assert main(args) == 1
-    assert session_cls.create.call_count == 1
+    assert session_cls.return_value.connect.call_count == 1
 
 
 def test_main_02(mocker):
@@ -67,10 +99,9 @@ def test_main_02(mocker):
         prep=None,
     )
     assert main(args) == 0
-    assert session_cls.create.call_count == 1
-    session_obj = session_cls.create.return_value
-    assert session_obj.airplane_mode == 1
-    assert session_obj.disconnect.call_count == 1
+    assert session_cls.return_value.connect.call_count == 1
+    assert session_cls.return_value.airplane_mode == 1
+    assert session_cls.return_value.disconnect.call_count == 1
 
 
 @mark.parametrize(
@@ -88,7 +119,7 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
     """test main() - install"""
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.get_package_name.return_value = pkg
-    session_obj = session_cls.create.return_value
+    session_obj = session_cls.return_value
     session_obj.install.return_value = install
     apk = tmp_path / "fake.apk"
     (tmp_path / "llvm-symbolizer").touch()
@@ -100,7 +131,7 @@ def test_main_03(mocker, tmp_path, pkg, install, result):
         prep=None,
     )
     assert main(args) == result
-    assert session_cls.create.call_count == 1
+    assert session_obj.connect.call_count == 1
     assert session_obj.install.call_count == (1 if pkg else 0)
     assert session_obj.install_file.call_count == (0 if result else 1)
     assert session_obj.disconnect.call_count == 1
@@ -120,7 +151,7 @@ def test_main_04(mocker, tmp_path, pkg, result):
     mocker.patch("fxpoppet.main.ADBProcess", autospec=True)
     session_cls = mocker.patch("fxpoppet.main.ADBSession", autospec=True)
     session_cls.get_package_name.return_value = pkg
-    session_obj = session_cls.create.return_value
+    session_obj = session_cls.return_value
     args = mocker.Mock(
         airplane_mode=None,
         launch=tmp_path / "fake.apk",
@@ -129,7 +160,7 @@ def test_main_04(mocker, tmp_path, pkg, result):
         prep=None,
     )
     assert main(args) == result
-    assert session_cls.create.call_count == 1
+    assert session_obj.connect.call_count == 1
     assert session_obj.disconnect.call_count == 1
 
 
@@ -144,8 +175,8 @@ def test_main_05(mocker, tmp_path):
         prep=tmp_path / "fake.apk",
     )
     assert main(args) == 0
-    assert session_cls.create.call_count == 1
-    session_obj = session_cls.create.return_value
+    session_obj = session_cls.return_value
+    assert session_obj.connect.call_count == 1
     assert session_obj.airplane_mode == 1
     assert session_obj.install.call_count == 1
     assert session_obj.disconnect.call_count == 1
