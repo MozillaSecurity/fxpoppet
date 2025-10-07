@@ -496,7 +496,7 @@ class AndroidEmulator:
                 emu.terminate()
                 try:
                     # this should not hang (but does), timeout is here just in case.
-                    emu.wait(120)
+                    emu.wait(60)
                 except TimeoutExpired:
                     emu.kill()
                     with suppress(TimeoutExpired):

@@ -334,38 +334,22 @@ class ADBSession:
             cmd.append(f"--pid={pid}")
         return self.call(cmd, timeout=30).output
 
-    def connect(
-        self,
-        as_root: bool = True,
-        boot_timeout: int = 300,
-        max_attempts: int = 60,
-        retry_delay: int = 1,
-    ) -> bool:
+    def connect(self, as_root: bool = True, boot_timeout: int = 300) -> None:
         """Connect to a device via ADB.
 
         Args:
             as_root: Attempt to enable root. Default is True.
             boot_timeout: Seconds to wait for device boot to complete.
-            max_attempts: Number of attempt to connect to the device.
-            retry_delay: Seconds to wait between connection attempts.
 
         Returns:
-            True if connection was established otherwise False.
+            None.
         """
         assert boot_timeout > 0
-        assert max_attempts > 0
-        assert retry_delay >= 0
-        attempt = 0
+        retry = True
         root_called = False
         set_enforce_called = False
-        while attempt < max_attempts:
-            attempt += 1
-            # attempt to connect to device
-            self.connected = False
-            if self._serial not in self.devices(any_state=False):
-                LOG.warning("Device not found (attempt %d/%d)", attempt, max_attempts)
-                sleep(retry_delay)
-                continue
+        while retry:
+            retry = False
             self.connected = True
             # verify we are connected
             LOG.debug("waiting for device to boot (%ds)...", boot_timeout)
@@ -379,77 +363,43 @@ class ADBSession:
                 ["settings", "get", "secure", "android_id"], device_required=False
             )
             if result.exit_code != 0:
-                LOG.error("Failed to retrieve Android ID")
+                LOG.debug("failed to retrieve Android ID")
                 self.connected = False
                 raise ADBSessionError("Device in invalid state")
             self.device_id = result.output
             # get active user
             result = self.shell(["whoami"], device_required=False, timeout=30)
             if result.exit_code != 0 or not result.output:
-                LOG.error("Failed to retrieve active user")
+                LOG.debug("failed to retrieve active user")
                 raise ADBSessionError("Device in invalid state")
             self._root = result.output == "root"
-            # check SELinux mode
-            if self._root and self.get_enforce():
+            if as_root:
+                # handle root login
+                if not self._root:
+                    if root_called:
+                        LOG.debug("root login attempt failed")
+                        raise ADBSessionError("Root login failed")
+                    self.call(["root"], timeout=30)
+                    retry = True
+                    root_called = True
+                    self.connected = False
+                    continue
+                # handle SELinux
                 if set_enforce_called:
                     self.connected = False
                     raise ADBSessionError("set_enforce(0) failed!")
-                # set SELinux to run in permissive mode
-                self.set_enforce(0)
-                self.shell(["stop"])
-                self.shell(["start"])
-                # put the device in a known state
-                self.call(["reconnect"], timeout=30)
-                set_enforce_called = True
-                attempt -= 1
-                continue
-            # enable root if needed
-            if as_root and not self._root:
-                if self.call(["root"], timeout=30).exit_code == 0:
-                    # only skip attempt to call root once
-                    if not root_called:
-                        root_called = True
-                        attempt -= 1
-                else:
-                    LOG.warning("Failed root login attempt")
-                self.connected = False
-                continue
-            # connected!
-            break
-        else:
-            # TODO: this should raise
-            LOG.debug("failed to connect to device")
-            self.connected = False
-            return False
-
+                if self.get_enforce():
+                    # set SELinux to run in permissive mode
+                    self.set_enforce(0)
+                    self.shell(["stop"])
+                    self.shell(["start"])
+                    # put the device in a known state
+                    self.call(["reconnect"], timeout=30)
+                    retry = True
+                    set_enforce_called = True
+                    self.connected = False
+                    continue
         assert self.connected
-        return True
-
-    @classmethod
-    def create(
-        cls,
-        serial: str,
-        as_root: bool = True,
-        max_attempts: int = 10,
-        retry_delay: int = 1,
-    ) -> ADBSession | None:
-        """Create a ADBSession and connect to a device via ADB.
-
-        Args:
-            serial: Serial of Android device to connect to.
-            as_root: Attempt to enable root.
-            max_attempts: Number of attempts to connect to the device.
-            retry_delay: Number of seconds to wait between attempts.
-
-        Returns:
-            A connected ADBSession object or None
-        """
-        session = cls(serial)
-        if session.connect(
-            as_root=as_root, max_attempts=max_attempts, retry_delay=retry_delay
-        ):
-            return session
-        return None
 
     def devices(self, any_state: bool = True) -> dict[str, str]:
         """Devices visible to ADB.
@@ -490,12 +440,11 @@ class ADBSession:
         if self._root and unroot:
             try:
                 if self.call(["unroot"], timeout=30).exit_code == 0:
-                    self.connected = False
                     self._root = False
-                    return
-                LOG.warning("'unroot' failed")
             except ADBCommandError:
                 LOG.warning("'unroot' not support by ADB")
+            if self._root:
+                LOG.debug("'unroot' failed during disconnect")
         self.connected = False
 
     def get_enforce(self) -> bool:
@@ -738,15 +687,11 @@ class ADBSession:
             raise FileNotFoundError(f"'{path}' does not exist")
         return PurePosixPath(result.output)
 
-    def reboot_device(
-        self, boot_timeout: int = 300, max_attempts: int = 60, retry_delay: int = 1
-    ) -> None:
+    def reboot_device(self, boot_timeout: int = 300) -> None:
         """Reboot the connected device and reconnect.
 
         Args:
             boot_timeout: Seconds to wait for device boot to complete.
-            max_attempts: Number of attempts to connect to the device.
-            retry_delay: Seconds to wait between connection attempts.
 
         Returns:
             None
@@ -754,12 +699,8 @@ class ADBSession:
         was_root = self._root
         self.call(["reboot"])
         self.connected = False
-        self.connect(
-            as_root=was_root,
-            boot_timeout=boot_timeout,
-            max_attempts=max_attempts,
-            retry_delay=retry_delay,
-        )
+        self.connect(as_root=was_root, boot_timeout=boot_timeout)
+        # TODO: better error handling
         assert self.connected, "Device did not connect after reboot"
 
     def remount(self) -> None:

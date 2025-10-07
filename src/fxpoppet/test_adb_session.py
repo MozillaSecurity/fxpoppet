@@ -30,6 +30,7 @@ from .adb_session import (
 )
 def test_adb_session_01(mocker, result):
     """test ADBSession._call_adb()"""
+    mocker.patch("fxpoppet.adb_session.ADBSession._adb_check", return_value="adb")
     mocker.patch(
         "fxpoppet.adb_session.run",
         autospec=True,
@@ -87,7 +88,6 @@ def test_adb_session_01(mocker, result):
         (ADBResult(2, "foo"), None, None, True),
     ],
 )
-@mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_02(mocker, ret, msg, exc, connected):
     """test ADBSession.call()"""
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", return_value=ret)
@@ -104,7 +104,6 @@ def test_adb_session_02(mocker, ret, msg, exc, connected):
             session.call(["test"])
 
 
-@mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_03(mocker):
     """test ADBSession.devices()"""
 
@@ -156,7 +155,6 @@ def test_adb_session_03(mocker):
         (True, 2),
     ],
 )
-@mark.usefixtures("tmp_session_adb_check")
 def test_adb_session_04(mocker, root, repeat):
     """test ADBSession.connect() and ADBSession.disconnect()"""
     test_device_id = "492d81f7e1ffee59"
@@ -164,14 +162,6 @@ def test_adb_session_04(mocker, root, repeat):
     # pylint: disable=too-many-return-statements
     def fake_adb_call(obj, cmd, **_kw):
         assert cmd
-        if cmd[0] == "devices":
-            return ADBResult(
-                0,
-                "List of devices attached\n"
-                "* daemon not running; starting now at tcp:5037\n"
-                "* daemon started successfully\n"
-                "fake-serial   device",
-            )
         if cmd[0] == "disconnect":
             if not obj.connected:
                 return ADBResult(0, "already disconnected")
@@ -200,49 +190,17 @@ def test_adb_session_04(mocker, root, repeat):
 
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", fake_adb_call)
     session = ADBSession("fake-serial")
-    assert session is not None
     assert not session.connected
     assert session.device_id is None
     assert not session._root
     for _ in range(repeat):
-        assert session.connect(as_root=root, max_attempts=1)
-        assert session.device_id == test_device_id
+        session.connect(as_root=root)
         assert session.connected
+        assert session.device_id == test_device_id
         assert session._root == root
     session.disconnect()
     assert not session.connected
     assert not session._root
-
-
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_05(mocker):
-    """test ADBSession.connect() no devices available"""
-    mocker.patch("fxpoppet.adb_session.sleep")
-
-    def fake_adb_call(_, cmd, **_kw):
-        assert cmd
-        if cmd[0] == "devices":
-            return ADBResult(
-                0,
-                "List of devices attached\n"
-                "* daemon not running; starting now at tcp:5037\n"
-                "* daemon started successfully",
-            )
-        raise AssertionError(f"unexpected command {cmd!r}")
-
-    mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", fake_adb_call)
-    assert not ADBSession("fake-serial").connect()
-
-
-@mark.parametrize("success", [True, False])
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_06(mocker, success):
-    """test ADBSession.create()"""
-    mocker.patch("fxpoppet.adb_session.ADBSession.connect", return_value=success)
-    if success:
-        assert ADBSession.create("fake-serial") is not None
-    else:
-        assert ADBSession.create("fake-serial") is None
 
 
 @mark.parametrize(
@@ -254,21 +212,12 @@ def test_adb_session_06(mocker, success):
         (ADBResult(0, "1234567890abcdef"), ADBResult(1, "")),
     ],
 )
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_07(mocker, android_id, user_id):
+def test_adb_session_05(mocker, android_id, user_id):
     """test ADBSession.connect() device in a bad state"""
     mocker.patch("fxpoppet.adb_session.sleep")
 
     def fake_adb_call(_, cmd, **_kw):
         assert cmd
-        if cmd[0] == "devices":
-            return ADBResult(
-                0,
-                "List of devices attached\n"
-                "* daemon not running; starting now at tcp:5037\n"
-                "* daemon started successfully\n"
-                "fake-serial   device",
-            )
         if cmd[0] == "shell":
             # strip "shell -n -T"
             shell_cmd = cmd[3:]
@@ -285,8 +234,7 @@ def test_adb_session_07(mocker, android_id, user_id):
         ADBSession("fake-serial").connect()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_08(mocker):
+def test_adb_session_06(mocker):
     """test ADBSession.call() with unknown command"""
     mocker.patch(
         "fxpoppet.adb_session.ADBSession._call_adb",
@@ -299,8 +247,7 @@ def test_adb_session_08(mocker):
         session.call(["unknown-cmd"])
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_09(tmp_path, mocker):
+def test_adb_session_07(tmp_path, mocker):
     """test ADBSession.install()"""
 
     def fake_get_package_name(*_):
@@ -360,8 +307,7 @@ def test_adb_session_09(tmp_path, mocker):
         session.install(apk_file)
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_10(mocker):
+def test_adb_session_08(mocker):
     """test ADBSession.uninstall()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -377,8 +323,7 @@ def test_adb_session_10(mocker):
     assert session.uninstall("org.test.preinstalled")
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_11(mocker):
+def test_adb_session_09(mocker):
     """test ADBSession.get_pid()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -401,8 +346,7 @@ def test_adb_session_11(mocker):
     assert session.get_pid("org.test.preinstalled") == 1337
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_12(mocker):
+def test_adb_session_10(mocker):
     """test ADBSession.is_installed()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -429,8 +373,7 @@ def test_adb_session_12(mocker):
     assert session.is_installed("org.test.preinstalled")
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_13(mocker):
+def test_adb_session_11(mocker):
     """test ADBSession.packages()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -461,8 +404,7 @@ def test_adb_session_13(mocker):
     assert "org.test.preinstalled" in pkgs
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_14(mocker):
+def test_adb_session_12(mocker):
     """test ADBSession.collect_logs()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -507,8 +449,7 @@ def test_adb_session_14(mocker):
     assert not session.collect_logs(1111).splitlines()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_15(mocker):
+def test_adb_session_13(mocker):
     """test ADBSession.open_files()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -597,8 +538,7 @@ def test_adb_session_15(mocker):
     assert any(session.open_files(files=["test"]))
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_16(mocker):
+def test_adb_session_14(mocker):
     """test ADBSession._get_procs()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -641,8 +581,7 @@ def test_adb_session_16(mocker):
     assert dev_procs[0].pid == 9991
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_17(tmp_path, mocker):
+def test_adb_session_15(tmp_path, mocker):
     """test ADBSession.push()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -663,8 +602,7 @@ def test_adb_session_17(tmp_path, mocker):
     assert session.push(push_file, "dst")
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_18(mocker):
+def test_adb_session_16(mocker):
     """test ADBSession.pull()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -681,8 +619,7 @@ def test_adb_session_18(mocker):
     assert session.pull("src", "dst")
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_19(mocker):
+def test_adb_session_17(mocker):
     """test ADBSession.clear_log()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -698,8 +635,7 @@ def test_adb_session_19(mocker):
     assert session.clear_logs()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_20(mocker):
+def test_adb_session_18(mocker):
     """test ADBSession.listdir()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -724,8 +660,7 @@ def test_adb_session_20(mocker):
     assert "test" in dir_list
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_21(mocker):
+def test_adb_session_19(mocker):
     """test ADBSession.process_exists()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -744,7 +679,7 @@ def test_adb_session_21(mocker):
     assert session.process_exists(9990)
 
 
-def test_adb_session_22(mocker, tmp_path):
+def test_adb_session_20(mocker, tmp_path):
     """test ADBSession._aapt_check()"""
     (tmp_path / "android-9").mkdir()
     fake_aapt_sys = tmp_path / "android-9" / "aapt-sys"
@@ -768,7 +703,7 @@ def test_adb_session_22(mocker, tmp_path):
         assert ADBSession._aapt_check()
 
 
-def test_adb_session_23(mocker, tmp_path):
+def test_adb_session_21(mocker, tmp_path):
     """test ADBSession._adb_check()"""
     mocker.patch("fxpoppet.adb_session.sleep")
     (tmp_path / "platform-tools").mkdir()
@@ -793,8 +728,7 @@ def test_adb_session_23(mocker, tmp_path):
         assert ADBSession._adb_check()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_24(mocker, tmp_path):
+def test_adb_session_22(mocker, tmp_path):
     """test ADBSession.get_package_name()"""
     mocker.patch(
         "fxpoppet.adb_session.ADBSession._aapt_check", return_value=b"fake_aapt"
@@ -848,8 +782,7 @@ def test_adb_session_24(mocker, tmp_path):
     assert ADBSession.get_package_name(fake_apk) == "org.mozilla.fennec_aurora"
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_25(mocker):
+def test_adb_session_23(mocker):
     """test ADBSession.get_enforce()"""
     mocker.patch(
         "fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, "Enforcing")
@@ -863,8 +796,7 @@ def test_adb_session_25(mocker):
     assert not session.get_enforce()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_26(mocker):
+def test_adb_session_24(mocker):
     """test ADBSession.set_enforce()"""
     # disable when enabled
     fake_call = mocker.patch("fxpoppet.adb_session.ADBSession.call")
@@ -880,8 +812,7 @@ def test_adb_session_26(mocker):
     assert fake_call.call_count == 1
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_27(mocker):
+def test_adb_session_25(mocker):
     """test ADBSession.realpath()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -903,8 +834,7 @@ def test_adb_session_27(mocker):
     assert str(session.realpath(PurePosixPath("existing/path"))) == "existing/path"
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_28(mocker):
+def test_adb_session_26(mocker):
     """test ADBSession.reverse()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -919,8 +849,7 @@ def test_adb_session_28(mocker):
     assert session.reverse(1234, 1235)
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_29(mocker):
+def test_adb_session_27(mocker):
     """test ADBSession.reverse_remove()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -942,8 +871,7 @@ def test_adb_session_29(mocker):
     assert session.reverse_remove(remote=1025)
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_30(mocker):
+def test_adb_session_28(mocker):
     """test ADBSession.airplane_mode()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -987,8 +915,7 @@ def test_adb_session_30(mocker):
         (False, (ADBResult(0, "0"), ADBResult(0, "0"))),
     ],
 )
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_31(mocker, result, shell_effect):
+def test_adb_session_29(mocker, result, shell_effect):
     """test ADBSession.wait_for_boot()"""
     mocker.patch("fxpoppet.adb_session.time", side_effect=range(3))
     mocker.patch.object(ADBSession, "shell", side_effect=shell_effect)
@@ -997,8 +924,7 @@ def test_adb_session_31(mocker, result, shell_effect):
     assert session.wait_for_boot(timeout=2, poll_wait=0) == result
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_32(mocker):
+def test_adb_session_30(mocker):
     """test ADBSession.reboot_device()"""
 
     def fake_adb_call(_, cmd, **_kw):
@@ -1015,8 +941,7 @@ def test_adb_session_32(mocker):
         session.reboot_device()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_33(mocker):
+def test_adb_session_31(mocker):
     """test ADBSession.remount()"""
 
     def fake_adb_01(_, cmd, **_kw):
@@ -1049,8 +974,7 @@ def test_adb_session_33(mocker):
     session.remount()
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_34(mocker):
+def test_adb_session_32(mocker):
     """test ADBSession.sanitizer_options()"""
     mocker.patch("fxpoppet.adb_session.ADBSession.call", autospec=True)
 
@@ -1065,8 +989,7 @@ def test_adb_session_34(mocker):
     session.sanitizer_options("asan", {"a": "1", "b": "2"})
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_35(mocker):
+def test_adb_session_33(mocker):
     """test ADBSession.install_file()"""
     mocker.patch("fxpoppet.adb_session.ADBSession.push", autospec=True)
     mocker.patch("fxpoppet.adb_session.ADBSession.shell", autospec=True)
@@ -1076,8 +999,7 @@ def test_adb_session_35(mocker):
     )
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_36(mocker):
+def test_adb_session_34(mocker):
     """test ADBSession.connect() timeout"""
     mocker.patch("fxpoppet.adb_session.ADBSession.wait_for_boot", return_value=False)
     mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, ""))
@@ -1089,8 +1011,7 @@ def test_adb_session_36(mocker):
         ADBSession("fake-serial").connect(boot_timeout=1)
 
 
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_37(mocker):
+def test_adb_session_35(mocker):
     """test ADBSession.connect() set enforce failed"""
     mocker.patch("fxpoppet.adb_session.ADBSession.wait_for_boot")
     mocker.patch("fxpoppet.adb_session.ADBSession.get_enforce")
@@ -1115,8 +1036,7 @@ def test_adb_session_37(mocker):
         ADBCommandError("Invalid ADB command ..."),
     ],
 )
-@mark.usefixtures("tmp_session_adb_check")
-def test_adb_session_38(mocker, effect):
+def test_adb_session_36(mocker, effect):
     """test ADBSession.disconnect() unroot"""
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=effect)
     session = ADBSession("fake-serial")

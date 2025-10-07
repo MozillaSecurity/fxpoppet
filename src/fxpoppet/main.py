@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace
+from contextlib import suppress
 from logging import DEBUG, ERROR, INFO, WARNING, basicConfig, getLogger
 from os import getenv
 from pathlib import Path
 
 from .adb_process import ADBProcess
-from .adb_session import DEVICE_TMP, ADBSession
+from .adb_session import DEVICE_TMP, ADBCommunicationError, ADBSession, ADBSessionError
 
 LOG = getLogger(__name__)
 
@@ -75,7 +76,7 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     # sanity check args
     args = parser.parse_args(argv)
     if args.serial is None:
-        devices = ADBSession("").devices(any_state=False)
+        devices = ADBSession("").devices(any_state=True)
         if len(devices) > 1:
             parser.error(
                 "Multiple devices detected. "
@@ -83,6 +84,8 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
             )
         elif devices:
             args.serial, _ = devices.popitem()
+        if args.serial is None:
+            parser.error("No device detected.")
     for apk in (args.install, args.launch, args.prep):
         if apk is not None and not apk.is_file():
             parser.error(f"Invalid APK '{apk}'")
@@ -93,10 +96,12 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
 def main(args: Namespace) -> int:
     """Main function"""
     configure_logging(args.log_level)
-    LOG.info("Connecting to device (%s)...", args.serial)
-    session = ADBSession.create(args.serial, as_root=not args.non_root)
-    if session is None:
-        LOG.error("Failed to connect to %s", args.serial)
+    LOG.info("Connecting to device '%s'...", args.serial)
+    session = ADBSession(args.serial)
+    with suppress(ADBCommunicationError, ADBSessionError):
+        session.connect(as_root=not args.non_root)
+    if not session.connected:
+        LOG.error("Failed to connect to '%s'", args.serial)
         return 1
     try:
         if args.prep is not None:
