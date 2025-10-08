@@ -353,17 +353,13 @@ class AndroidSDKRepo:
 
 
 def _is_free(port: int) -> bool:
-    sock = socket(AF_INET, SOCK_STREAM)
-    try:
+    with suppress(OSError), socket(AF_INET, SOCK_STREAM) as sock:
         sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         sock.settimeout(0.05)
         sock.bind(("localhost", port))
         sock.listen()
         return True
-    except OSError:
-        return False
-    finally:
-        sock.close()
+    return False
 
 
 class AndroidEmulatorError(Exception):
