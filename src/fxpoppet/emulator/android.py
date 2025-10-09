@@ -526,16 +526,17 @@ class AndroidEmulator:
         LOG.debug("waiting for device to boot...")
         deadline = perf_counter() + boot_timeout
         while True:
-            adb_result = run(
-                cmd,
-                env={"ANDROID_SERIAL": f"emulator-{port:d}"},
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
-            if adb_result.returncode == 0 and adb_result.stdout.strip() == b"1":
-                LOG.debug("device booted")
-                break
+            with suppress(TimeoutExpired):
+                adb_result = run(
+                    cmd,
+                    env={"ANDROID_SERIAL": f"emulator-{port:d}"},
+                    capture_output=True,
+                    check=False,
+                    timeout=30,
+                )
+                if adb_result.returncode == 0 and adb_result.stdout.strip() == b"1":
+                    LOG.debug("device booted")
+                    break
             if proc.poll() is not None:
                 raise AndroidEmulatorError("Failed to launch emulator.")
             if perf_counter() >= deadline:
