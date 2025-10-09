@@ -519,6 +519,8 @@ class AndroidEmulator:
         assert boot_timeout > 0
         cmd = (
             str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
+            "-s",
+            f"emulator-{port:d}",
             "shell",
             "getprop",
             "sys.boot_completed",
@@ -529,7 +531,6 @@ class AndroidEmulator:
             with suppress(TimeoutExpired):
                 adb_result = run(
                     cmd,
-                    env={"ANDROID_SERIAL": f"emulator-{port:d}"},
                     capture_output=True,
                     check=False,
                     timeout=30,
