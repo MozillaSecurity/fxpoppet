@@ -5,6 +5,7 @@
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
 
+from ffpuppet.exceptions import BrowserTerminatedError
 from pytest import mark, raises
 
 from .adb_process import ADBLaunchError, ADBProcess, Reason
@@ -151,6 +152,76 @@ def test_adb_process_launch(mocker, env):
         assert proc._pid is None
         assert proc.logs
     assert fake_bs.return_value.wait.call_count == 1
+    assert fake_bs.return_value.close.call_count == 1
+
+
+def test_adb_process_launch_process_launch_failure(mocker):
+    """test ADBProcess.launch() process launch failure"""
+    mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
+    mocker.patch("fxpoppet.adb_process.time", side_effect=range(100))
+    fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
+    fake_bs.return_value.location = "http://localhost"
+    fake_bs.return_value.port.return_value = 1234
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.shell.side_effect = (
+        ADBResult(0, ""),
+        ADBResult(1, ""),
+        ADBResult(0, ""),
+        ADBResult(0, ""),
+        ADBResult(0, ""),
+    )
+    fake_session.collect_logs.return_value = ""
+    fake_session.get_pid.return_value = None
+    fake_session.listdir.return_value = ()
+    with (
+        ADBProcess("org.mozilla.geckoview_example", fake_session) as proc,
+        raises(ADBLaunchError, match=r"Could not launch"),
+    ):
+        proc.launch("fake.url")
+    assert fake_bs.return_value.wait.call_count == 0
+    assert fake_bs.return_value.close.call_count == 1
+
+
+def test_adb_process_launch_failure_during_boot(mocker):
+    """test ADBProcess.launch() failure during boot"""
+    mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
+    mocker.patch("fxpoppet.adb_process.time", side_effect=range(100))
+    fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
+    fake_bs.return_value.location = "http://localhost"
+    fake_bs.return_value.port.return_value = 1234
+    fake_bs.return_value.wait.side_effect = BrowserTerminatedError("launch failure")
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.shell.return_value = ADBResult(0, "Status: ok")
+    fake_session.collect_logs.return_value = ""
+    fake_session.get_pid.side_effect = (None, 1234)
+    fake_session.listdir.return_value = ()
+    with (
+        ADBProcess("org.mozilla.geckoview_example", fake_session) as proc,
+        raises(ADBLaunchError, match="launch failure"),
+    ):
+        proc.launch("fake.url")
+    assert fake_bs.return_value.close.call_count == 1
+
+
+def test_adb_process_launch_upload_prefs_failure(mocker):
+    """test ADBProcess.launch() upload prefs failure"""
+    mocker.patch("fxpoppet.adb_process.sleep", autospec=True)
+    mocker.patch("fxpoppet.adb_process.time", side_effect=range(100))
+    fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
+    fake_bs.return_value.location = "http://localhost"
+    fake_bs.return_value.port.return_value = 1234
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.shell.return_value = ADBResult(0, "")
+    fake_session.push.return_value = False
+    fake_session.collect_logs.return_value = ""
+    fake_session.get_pid.return_value = None
+    fake_session.listdir.return_value = ()
+    with (
+        ADBProcess("org.mozilla.geckoview_example", fake_session) as proc,
+        raises(ADBLaunchError, match=r"Could not upload '.+-geckoview-config\.yaml'"),
+    ):
+        proc.launch("fake.url")
+    assert fake_bs.return_value.wait.call_count == 0
     assert fake_bs.return_value.close.call_count == 1
 
 
