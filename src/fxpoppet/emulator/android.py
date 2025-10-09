@@ -484,10 +484,9 @@ class AndroidEmulator:
             stderr=output,
             stdout=output,
         )
-
         try:
             self.boot_wait(emu, port, boot_timeout)
-        except Exception as exc:
+        except:
             if emu.poll() is None:
                 emu.terminate()
                 try:
@@ -499,7 +498,7 @@ class AndroidEmulator:
                         emu.wait(10)
             if self.xvfb is not None:
                 self.xvfb.stop()
-            raise exc
+            raise
 
         self.emu = emu
         self.pid = emu.pid
@@ -873,18 +872,21 @@ def main(argv: list[str] | None = None) -> None:
     init_logging(debug=args.verbose)
 
     if not args.skip_dl:
-        AndroidEmulator.install()
+        try:
+            AndroidEmulator.install()
+        except KeyboardInterrupt:
+            LOG.info("Aborting...")
+            return
 
     if not args.no_launch:
         # Find a free port
         port = AndroidEmulator.search_free_ports()
         avd_name = f"x86.{port:d}"
-
-        # Create an AVD and boot it once
-        AndroidEmulator.create_avd(avd_name)
-
-        LOG.info("Launching Android emulator...")
+        emu: AndroidEmulator | None = None
         try:
+            # Create an AVD and boot it once
+            AndroidEmulator.create_avd(avd_name)
+            LOG.info("Launching Android emulator...")
             # Boot the AVD
             emu = AndroidEmulator(
                 port=port,
@@ -895,20 +897,19 @@ def main(argv: list[str] | None = None) -> None:
                 xvfb=args.xvfb,
             )
             LOG.info("Android emulator is running as 'emulator-%d'", port)
-            try:
-                emu.wait()
-            finally:
-                LOG.info("Initiating emulator shutdown")
+            emu.wait()
+        except KeyboardInterrupt:
+            LOG.info("Aborting...")
+        finally:
+            LOG.info("Initiating emulator shutdown")
+            if emu is not None:
                 if emu.poll() is None:
                     emu.terminate()
                 try:
                     # this should never timeout
-                    emu.wait(timeout=120)
+                    emu.wait(timeout=60)
                 finally:
                     emu.cleanup()
-        except KeyboardInterrupt:
-            LOG.info("Aborting...")
-        finally:
             AndroidEmulator.remove_avd(avd_name)
 
 
