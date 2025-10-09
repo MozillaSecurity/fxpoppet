@@ -395,6 +395,7 @@ class AndroidEmulator:
         target: str | None = None,
         verbose: bool = False,
         boot_timeout: int = 300,
+        emulator_output: bool = False,
     ) -> None:
         """Create an AndroidEmulator object.
 
@@ -409,6 +410,7 @@ class AndroidEmulator:
             target: The target name (from builds.json).
             verbose: Enable verbose logging.
             boot_timeout: Time to wait for Android to boot in the emulator.
+            emulator_output: Display output from the emulator console.
         """
         self.avd_name = avd_name
         self.emu = None
@@ -456,8 +458,6 @@ class AndroidEmulator:
         args.extend(("-port", f"{self.port:d}"))
         args.append(f"@{self.avd_name}")
 
-        output = None if getLogger().getEffectiveLevel() == DEBUG else DEVNULL
-
         if xvfb:
             try:
                 self.xvfb: Xvfb | None = Xvfb(width=1280, height=1024, timeout=60)
@@ -481,8 +481,8 @@ class AndroidEmulator:
         emu = Popen(  # pylint: disable=consider-using-with
             [str(PATHS.sdk_root / "emulator" / f"emulator{EXE_SUFFIX}"), *args],
             env=env,
-            stderr=output,
-            stdout=output,
+            stderr=None if emulator_output else DEVNULL,
+            stdout=None if emulator_output else DEVNULL,
         )
         try:
             self.boot_wait(emu, port, boot_timeout)
@@ -831,6 +831,9 @@ def main(argv: list[str] | None = None) -> None:
     aparser = ArgumentParser(prog="Android emulator management tool")
     aparser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
+    )
+    aparser.add_argument(
+        "--emulator-output", action="store_true", help="Display emulator console output"
     )
     aparser.add_argument(
         "--boot-timeout",
