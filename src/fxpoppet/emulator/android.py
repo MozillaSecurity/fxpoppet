@@ -641,7 +641,7 @@ class AndroidEmulator:
         assert self.emu is not None
         return self.emu.poll()
 
-    def wait(self, timeout: int | None = None) -> int | None:
+    def wait(self, timeout: float | None = None) -> int:
         """Wait for emulator process to exit.
 
         Args:
@@ -649,7 +649,7 @@ class AndroidEmulator:
                      subprocess.TimeoutExpired.
 
         Returns:
-            Exit status of emulator process (None if still running).
+            Exit status of emulator process.
         """
         assert self.emu is not None
         return self.emu.wait(timeout=timeout)
