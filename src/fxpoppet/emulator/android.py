@@ -413,7 +413,6 @@ class AndroidEmulator:
             emulator_output: Display output from the emulator console.
         """
         self.avd_name = avd_name
-        self.emu = None
         self.env = dict(env or {})
         self.port = port
         self.snapshot = Snapshot[snapshot.upper()]
@@ -626,7 +625,6 @@ class AndroidEmulator:
         Returns:
             None
         """
-        assert self.emu is not None
         self.emu.terminate()
 
     def poll(self) -> int | None:
@@ -638,7 +636,6 @@ class AndroidEmulator:
         Returns:
             Exit status of emulator process (None if still running).
         """
-        assert self.emu is not None
         return self.emu.poll()
 
     def wait(self, timeout: float | None = None) -> int:
@@ -651,7 +648,6 @@ class AndroidEmulator:
         Returns:
             Exit status of emulator process.
         """
-        assert self.emu is not None
         return self.emu.wait(timeout=timeout)
 
     def save_snapshot(self) -> None:
