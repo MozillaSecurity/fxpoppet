@@ -17,7 +17,7 @@ from time import sleep, time
 from typing import TYPE_CHECKING
 
 from ffpuppet.bootstrapper import Bootstrapper
-from ffpuppet.exceptions import BrowserTerminatedError
+from ffpuppet.exceptions import LaunchError
 from ffpuppet.minidump_parser import MinidumpParser
 from yaml import safe_dump
 
@@ -372,7 +372,7 @@ class ADBProcess:
             self._pid = self._session.get_pid(self._package)
             try:
                 bootstrapper.wait(self.is_healthy, url=url)
-            except BrowserTerminatedError as exc:
+            except LaunchError as exc:
                 raise ADBLaunchError(str(exc)) from None
             # prevent power management and backgrounding
             self._session.shell(["am", "set-inactive", self._package, "false"])
