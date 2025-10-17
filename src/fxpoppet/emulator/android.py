@@ -489,7 +489,7 @@ class AndroidEmulator:
             if emu.poll() is None:
                 emu.terminate()
                 try:
-                    # this should not hang (but does), timeout is here just in case.
+                    # this should not hang (but does)
                     emu.wait(60)
                 except TimeoutExpired:
                     emu.kill()
@@ -515,15 +515,16 @@ class AndroidEmulator:
             None
         """
         assert boot_timeout > 0
+        serial = f"emulator-{port:d}"
         cmd = (
             str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
             "-s",
-            f"emulator-{port:d}",
+            serial,
             "shell",
             "getprop",
             "sys.boot_completed",
         )
-        LOG.debug("waiting for device to boot...")
+        LOG.debug("waiting for '%s' to boot...", serial)
         deadline = perf_counter() + boot_timeout
         while True:
             with suppress(TimeoutExpired):
@@ -534,7 +535,7 @@ class AndroidEmulator:
                     timeout=30,
                 )
                 if adb_result.returncode == 0 and adb_result.stdout.strip() == b"1":
-                    LOG.debug("device booted")
+                    LOG.debug("device '%s' booted", serial)
                     break
             if proc.poll() is not None:
                 raise AndroidEmulatorError("Failed to launch emulator.")
