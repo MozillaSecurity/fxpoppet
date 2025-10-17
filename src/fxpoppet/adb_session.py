@@ -476,7 +476,7 @@ class ADBSession:
         if not apk.is_file():
             raise FileNotFoundError("APK path must point to a file")
         aapt = cls._aapt_check()
-        apk_info = check_output((str(aapt), "dump", "badging", str(apk)))
+        apk_info = check_output((aapt, "dump", "badging", str(apk)))
         for line in apk_info.splitlines():
             if line.startswith(b"package: name="):
                 return line.split()[1][5:].strip(b"'").decode("utf-8", errors="ignore")
