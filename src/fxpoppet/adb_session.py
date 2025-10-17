@@ -352,7 +352,7 @@ class ADBSession:
             retry = False
             self.connected = True
             # verify we are connected
-            LOG.debug("waiting for device to boot (%ds)...", boot_timeout)
+            LOG.debug("waiting for '%s' to boot (%ds)...", self._serial, boot_timeout)
             if not self.wait_for_boot(timeout=boot_timeout):
                 LOG.debug("device failed to boot (%ds)", boot_timeout)
                 self.connected = False
@@ -438,11 +438,10 @@ class ADBSession:
             LOG.debug("already disconnected")
             return
         if self._root and unroot:
-            try:
-                if self.call(["unroot"], timeout=30).exit_code == 0:
+            # attempt to unroot (device may be unresponsive)
+            with suppress(ADBCommandError, ADBCommunicationError):
+                if self.call(["unroot"], timeout=10).exit_code == 0:
                     self._root = False
-            except ADBCommandError:
-                LOG.warning("'unroot' not support by ADB")
             if self._root:
                 LOG.debug("'unroot' failed during disconnect")
         self.connected = False
