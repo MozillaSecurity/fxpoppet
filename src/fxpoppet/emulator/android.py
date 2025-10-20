@@ -16,7 +16,7 @@ from platform import system
 from shutil import copy, rmtree
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 from subprocess import DEVNULL, Popen, TimeoutExpired, check_output, run
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, gettempdir
 from time import perf_counter, sleep
 from urllib.parse import urlparse
 from xml.etree.ElementTree import (
@@ -475,6 +475,12 @@ class AndroidEmulator:
             if "XAUTHORITY" in environ:
                 env["XAUTHORITY"] = getenv("XAUTHORITY", "")
         env["ANDROID_AVD_HOME"] = str(PATHS.avd_home)
+
+        # a prompt will block the emulator from launching if crash dump files exist
+        # currently there does not seem to be away to disable this in automation
+        for entry in Path(gettempdir()).glob("**/android-*/emu-crash-*"):
+            if entry.is_dir():
+                rmtree(entry, ignore_errors=True)
 
         LOG.debug("launching emulator (port=%d, snapshot=%s)", port, self.snapshot.name)
         emu = Popen(  # pylint: disable=consider-using-with
