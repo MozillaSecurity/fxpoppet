@@ -1027,6 +1027,21 @@ def test_adb_session_35(mocker):
         ADBSession("fake-serial").connect(as_root=True, boot_timeout=1)
 
 
+def test_adb_session_36(mocker):
+    """test ADBSession.connect() root login failed"""
+    mocker.patch("fxpoppet.adb_session.ADBSession.wait_for_boot")
+    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, ""))
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.shell", return_value=ADBResult(0, "user")
+    )
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.devices",
+        return_value={"fake-serial": "device"},
+    )
+    with raises(ADBSessionError, match=r"Root login failed"):
+        ADBSession("fake-serial").connect(as_root=True, boot_timeout=1)
+
+
 @mark.parametrize(
     "effect",
     [
@@ -1036,7 +1051,7 @@ def test_adb_session_35(mocker):
         ADBCommandError("Invalid ADB command ..."),
     ],
 )
-def test_adb_session_36(mocker, effect):
+def test_adb_session_37(mocker, effect):
     """test ADBSession.disconnect() unroot"""
     mocker.patch("fxpoppet.adb_session.ADBSession._call_adb", side_effect=effect)
     session = ADBSession("fake-serial")
