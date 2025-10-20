@@ -385,16 +385,12 @@ class ADBSession:
                     self.connected = False
                     continue
                 # handle SELinux
-                if set_enforce_called:
-                    self.connected = False
-                    raise ADBSessionError("set_enforce(0) failed!")
                 if self.get_enforce():
+                    if set_enforce_called:
+                        self.connected = False
+                        raise ADBSessionError("set_enforce(0) failed!")
                     # set SELinux to run in permissive mode
                     self.set_enforce(0)
-                    self.shell(["stop"])
-                    self.shell(["start"])
-                    # put the device in a known state
-                    self.call(["reconnect"], timeout=30)
                     retry = True
                     set_enforce_called = True
                     self.connected = False
