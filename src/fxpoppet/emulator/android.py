@@ -895,6 +895,7 @@ def main(argv: list[str] | None = None) -> None:
                 boot_timeout=args.boot_timeout,
                 headless=args.headless,
                 xvfb=args.xvfb,
+                emulator_output=args.emulator_output,
             )
             LOG.info("Android emulator is running as 'emulator-%d'", port)
             emu.wait()
