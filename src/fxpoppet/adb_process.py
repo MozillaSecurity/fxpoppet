@@ -21,7 +21,7 @@ from ffpuppet.exceptions import LaunchError
 from ffpuppet.minidump_parser import MinidumpParser
 from yaml import safe_dump
 
-from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
+from .adb_session import DEVICE_TMP, ADBCommunicationError, ADBSession, ADBSessionError
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
@@ -132,6 +132,7 @@ class ADBProcess:
             Log data.
         """
         # TODO: dump logs for all browser processes
+        assert self._pid is not None
         return self._session.collect_logs(pid=self._pid)
 
     def close(self) -> None:
@@ -168,8 +169,8 @@ class ADBProcess:
             # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
             if self.logs and (self.logs / "log_asan.txt").is_file():
                 self.reason = Reason.ALERT
-        except ADBSessionError:
-            LOG.error("No device detected while closing process")
+        except (ADBCommunicationError, ADBSessionError):
+            LOG.warning("No device detected while closing process")
         finally:
             if self.reason is None:
                 self.reason = Reason.CLOSED
@@ -623,19 +624,16 @@ class ADBProcess:
         assert timeout >= 0
         assert poll_rate <= timeout
         wait_end = time() + timeout
-        files = frozenset(str(self._session.realpath(x)) for x in wait_files)
-
-        while files:
-            open_files = frozenset(str(x) for _, x in self._session.open_files())
-            # check if any open files are in the wait file list
-            if not files.intersection(open_files):
-                break
-            if wait_end <= time():
-                LOG.debug(
-                    "Timeout waiting for: %s", ", ".join(files.intersection(open_files))
-                )
-                return False
-            sleep(poll_rate)
+        with suppress(ADBCommunicationError):
+            files = frozenset(str(self._session.realpath(x)) for x in wait_files)
+            while files:
+                open_files = frozenset(str(x) for _, x in self._session.open_files())
+                # check if any open files are in the wait file list
+                if not files.intersection(open_files):
+                    break
+                if wait_end <= time():
+                    return False
+                sleep(poll_rate)
         return True
 
     def _terminate(self) -> None:
