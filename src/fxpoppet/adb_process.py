@@ -63,7 +63,6 @@ class ADBProcess:
     """
 
     # TODO:
-    #  def clone_log(self, log_id, offset=0):
     #  def log_data(self, log_id, offset=0):
     #  def log_length(self, log_id):... likely not going to happen because of overhead
 
@@ -122,7 +121,7 @@ class ADBProcess:
         # negative 'self._launches' indicates clean_up() has been called
         self._launches = -1
 
-    def clone_log(self) -> str:
+    def clone_log(self) -> str | None:
         """Create a copy of existing logs.
 
         Args:
@@ -132,6 +131,7 @@ class ADBProcess:
             Log data.
         """
         # TODO: dump logs for all browser processes
+        assert self._pid is not None
         return self._session.collect_logs(pid=self._pid)
 
     def close(self) -> None:
@@ -161,15 +161,15 @@ class ADBProcess:
             self.wait()
             self._process_logs(crash_reports)
             # remove remote working path
-            self._session.shell(["rm", "-rf", str(self._working_path)])
+            self._session.device.shell(("rm", "-rf", str(self._working_path)))
             # remove remote config yaml
             cfg_file = str(DEVICE_TMP / f"{self._package}-geckoview-config.yaml")
-            self._session.shell(["rm", "-rf", cfg_file])
+            self._session.device.shell(("rm", "-rf", cfg_file))
             # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
             if self.logs and (self.logs / "log_asan.txt").is_file():
                 self.reason = Reason.ALERT
         except ADBSessionError:
-            LOG.error("No device detected while closing process")
+            LOG.warning("No device detected while closing process")
         finally:
             if self.reason is None:
                 self.reason = Reason.CLOSED
@@ -185,11 +185,10 @@ class ADBProcess:
         Yields:
             PID and the CPU usage as a percentage.
         """
-        result = self._session.shell(
+        result = self._session.device.shell(
             ("top", "-b", "-n", "1", "-m", "30", "-q", "-o", "PID,%CPU,CMDLINE"),
-            device_required=False,
         )
-        if result.exit_code == 0:
+        if result and result.exit_code == 0:
             for entry in result.output.splitlines():
                 pid, cpu_pct, args = entry.lstrip().split(maxsplit=2)
                 if self._package in args:
@@ -319,10 +318,10 @@ class ADBProcess:
                 }
             )
             # create location to store sanitizer logs
-            # self._session.shell(["mkdir", "-p", self._sanitizer_logs])
+            # self._session.device.shell(("mkdir", "-p", self._sanitizer_logs))
             # create empty profile
             self.profile = self._working_path / f"gv_profile_{getrandbits(32):08X}"
-            self._session.shell(["mkdir", "-p", str(self.profile)])
+            self._session.device.shell(("mkdir", "-p", str(self.profile)))
             # add environment variables
             env_mod = dict(env_mod or {})
             env_mod.setdefault("MOZ_SKIA_DISABLE_ASSERTS", "1")
@@ -353,7 +352,7 @@ class ADBProcess:
                 )
                 if not self._session.push(cfg_yml, DEVICE_TMP / cfg_yml.name):
                     raise ADBLaunchError(f"Could not upload '{cfg_yml.name}'")
-            cmd = [
+            cmd = (
                 "am",
                 "start",
                 "-W",
@@ -363,19 +362,20 @@ class ADBProcess:
                 "android.intent.action.VIEW",
                 "-d",
                 bootstrapper.location,
-            ]
-            if (
-                "Status: ok"
-                not in self._session.shell(cmd, timeout=launch_timeout).output
-            ):
+            )
+            result = self._session.device.shell(cmd, timeout=launch_timeout)
+            if result is None or "Status: ok" not in result.output:
                 raise ADBLaunchError(f"Could not launch '{self._package}'")
-            self._pid = self._session.get_pid(self._package)
+            pid = self._session.get_pid(self._package)
+            if pid is None:
+                raise ADBLaunchError(f"Could not launch '{self._package}'")
+            self._pid = pid
             try:
                 bootstrapper.wait(self.is_healthy, url=url)
             except LaunchError as exc:
                 raise ADBLaunchError(str(exc)) from None
             # prevent power management and backgrounding
-            self._session.shell(["am", "set-inactive", self._package, "false"])
+            self._session.device.shell(("am", "set-inactive", self._package, "false"))
         finally:
             self._session.reverse_remove(bootstrapper.port)
             bootstrapper.close()
@@ -460,11 +460,12 @@ class ADBProcess:
         # TODO: use a common tmp dir
         self.logs = Path(mkdtemp(prefix="mp-logs_"))
 
-        with (self.logs / "log_logcat.txt").open("w") as log_fp:
-            # TODO: should this filter by pid or not?
-            log_fp.write(self._session.collect_logs())
-            # log_fp.write(self._session.collect_logs(pid=self._pid))
-        self._split_logcat(self.logs, self._package)
+        # TODO: should this filter by pid or not?
+        device_logs = self._session.collect_logs()
+        if device_logs is not None:
+            (self.logs / "log_logcat.txt").write_text(device_logs)
+            self._split_logcat(self.logs, self._package)
+
         if not crash_reports:
             return
 
@@ -582,7 +583,7 @@ class ADBProcess:
                     o_fp.write(line.split(b": ", 1)[-1])
 
     def save_logs(self, dst: Path) -> None:
-        """Save logs to specified location.
+        """Save logs to specified location. 'dst' will be created.
 
         Args:
             dst: Location to save logs to.
@@ -592,15 +593,13 @@ class ADBProcess:
         """
         assert self.reason is not None, "Call close() first!"
         assert self._launches > -1, "clean_up() has been called"
-        if self.logs is None:
-            LOG.warning("No logs available to save.")
-            return
-        # copy logs to location specified by log_file
         dst.mkdir(parents=True, exist_ok=True)
-        for entry in self.logs.iterdir():
-            # skip directories
-            if entry.is_file():
-                copy(entry, dst)
+        if self.logs is not None:
+            # copy logs to location specified by log_file
+            for entry in self.logs.iterdir():
+                # skip directories
+                if entry.is_file():
+                    copy(entry, dst)
 
     def wait_on_files(
         self,
@@ -623,17 +622,13 @@ class ADBProcess:
         assert timeout >= 0
         assert poll_rate <= timeout
         wait_end = time() + timeout
-        files = frozenset(str(self._session.realpath(x)) for x in wait_files)
-
+        files = frozenset(str(self._session.realpath(x)) for x in wait_files if x)
         while files:
             open_files = frozenset(str(x) for _, x in self._session.open_files())
             # check if any open files are in the wait file list
             if not files.intersection(open_files):
                 break
             if wait_end <= time():
-                LOG.debug(
-                    "Timeout waiting for: %s", ", ".join(files.intersection(open_files))
-                )
                 return False
             sleep(poll_rate)
         return True
@@ -648,7 +643,7 @@ class ADBProcess:
             None
         """
         # TODO: is this the best way???
-        self._session.shell(["am", "force-stop", self._package])
+        self._session.device.shell(("am", "force-stop", self._package))
 
     def wait(self, timeout: float | None = None) -> bool:
         """Wait for process to terminate. If a timeout of zero or greater is specified

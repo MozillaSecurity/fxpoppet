@@ -9,7 +9,8 @@ from ffpuppet.exceptions import BrowserTerminatedError
 from pytest import mark, raises
 
 from .adb_process import ADBLaunchError, ADBProcess, Reason
-from .adb_session import ADBResult, ADBSession, ADBSessionError
+from .adb_session import ADBSession, ADBSessionError
+from .adb_wrapper import ADBResult
 
 
 def test_adb_process_basic(mocker):
@@ -29,6 +30,28 @@ def test_adb_process_basic(mocker):
         assert proc._pid is None
         proc.close()
         assert not proc.logs
+
+
+@mark.parametrize(
+    "process_exists, result",
+    [
+        # process is running
+        ((True, True), True),
+        # process is not running
+        ((False, False), False),
+    ],
+)
+def test_adb_process_is_running(mocker, process_exists, result):
+    """test ADBProcess.is_running()"""
+    test_pkg = "org.test.preinstalled"
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.process_exists.side_effect = process_exists
+    fake_session.collect_logs.return_value = ""
+    with ADBProcess(test_pkg, fake_session) as proc:
+        proc._pid = 123456
+        proc.reason = None
+        assert proc.is_running() == result
+        assert fake_session.process_exists.call_count == 1
 
 
 def test_adb_process_close(mocker):
@@ -65,7 +88,7 @@ def test_adb_process_missing_package(mocker):
     """test creating device with unknown package"""
     fake_session = mocker.Mock(spec_set=ADBSession)
     fake_session.is_installed.return_value = False
-    with raises(ADBSessionError, match="Package 'org.test.unknown' is not installed"):
+    with raises(ADBSessionError, match=r"Package 'org.test.unknown' is not installed"):
         ADBProcess("org.test.unknown", fake_session)
 
 
@@ -75,7 +98,7 @@ def test_adb_process_unsupported_app(mocker):
     fake_session.collect_logs.return_value = ""
     with (
         ADBProcess("org.some.app", fake_session) as proc,
-        raises(ADBLaunchError, match="Unsupported package 'org.some.app'"),
+        raises(ADBLaunchError, match=r"Unsupported package 'org.some.app'"),
     ):
         proc.launch("fake.url")
 
@@ -99,21 +122,16 @@ def test_adb_process_failed_bootstrap(mocker):
 def test_adb_process_package_already_running(mocker):
     """test ADBProcess.launch() package is running (bad state)"""
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.call.return_value = (1, "")
+    fake_session.device.call.return_value = (1, "")
     fake_session.collect_logs.return_value = ""
     fake_session.listdir.return_value = ()
     fake_session.process_exists.return_value = False
     with ADBProcess("org.mozilla.fenix", fake_session) as proc:
-        with raises(ADBLaunchError, match="'org.mozilla.fenix' is already running"):
+        with raises(ADBLaunchError, match=r"'org.mozilla.fenix' is already running"):
             proc.launch("fake.url")
         assert not proc.is_running()
         proc.cleanup()
         assert proc.logs is None
-
-
-# TODO: check config yaml output
-# def test_adb_process_06(mocker, tmp_path):
-#    """test ADBProcess.launch() check *-geckoview-config.yaml"""
 
 
 @mark.parametrize(
@@ -133,11 +151,10 @@ def test_adb_process_launch(mocker, env):
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = ADBResult(0, "Status: ok")
+    fake_session.device.shell.return_value = ADBResult(0, "Status: ok")
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1337)
     fake_session.listdir.return_value = ()
-    # fake_session.process_exists.return_value = False
     with ADBProcess("org.mozilla.geckoview_example", fake_session) as proc:
         assert not proc.is_running()
         assert not proc.is_healthy()
@@ -163,7 +180,7 @@ def test_adb_process_launch_process_launch_failure(mocker):
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.side_effect = (
+    fake_session.device.shell.side_effect = (
         ADBResult(0, ""),
         ADBResult(1, ""),
         ADBResult(0, ""),
@@ -191,7 +208,7 @@ def test_adb_process_launch_failure_during_boot(mocker):
     fake_bs.return_value.port.return_value = 1234
     fake_bs.return_value.wait.side_effect = BrowserTerminatedError("launch failure")
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = ADBResult(0, "Status: ok")
+    fake_session.device.shell.return_value = ADBResult(0, "Status: ok")
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1234)
     fake_session.listdir.return_value = ()
@@ -211,7 +228,7 @@ def test_adb_process_launch_upload_prefs_failure(mocker):
     fake_bs.return_value.location = "http://localhost"
     fake_bs.return_value.port.return_value = 1234
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = ADBResult(0, "")
+    fake_session.device.shell.return_value = ADBResult(0, "")
     fake_session.push.return_value = False
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.return_value = None
@@ -230,7 +247,7 @@ def test_adb_process_wait_on_files(mocker):
     fake_bs = mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True).create
     fake_bs.return_value.location = "http://localhost"
     fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.shell.return_value = ADBResult(0, "Status: ok")
+    fake_session.device.shell.return_value = ADBResult(0, "Status: ok")
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1337)
     fake_session.open_files.return_value = ((1, "some_file"),)
@@ -427,12 +444,12 @@ def test_adb_process_cpu_usage(mocker):
     package = "org.test.app"
 
     # no output
-    fake_session.shell.return_value = ADBResult(1, "")
+    fake_session.device.shell.return_value = ADBResult(1, "")
     with ADBProcess(package, fake_session) as proc:
         assert not any(proc.cpu_usage())
 
     # no entries
-    fake_session.shell.return_value = ADBResult(0, "368  0.0 zygote64\n")
+    fake_session.device.shell.return_value = ADBResult(0, "368  0.0 zygote64\n")
     with ADBProcess(package, fake_session) as proc:
         assert not any(proc.cpu_usage())
 
@@ -450,7 +467,7 @@ def test_adb_process_cpu_usage(mocker):
         "  469  0.0 media.metrics diametrics\n"
         "  468  0.0 media.extractor aextractor\n"
     )
-    fake_session.shell.return_value = ADBResult(0, top_output)
+    fake_session.device.shell.return_value = ADBResult(0, top_output)
     with ADBProcess(package, fake_session) as proc:
         usage = tuple(proc.cpu_usage())
         assert len(usage) == 4
@@ -465,3 +482,8 @@ def test_adb_process_cpu_usage(mocker):
                 assert cpu == 0
             else:
                 raise AssertionError("top output parsing failed")
+
+
+# TODO: check config yaml output
+# def test_adb_process_06(mocker, tmp_path):
+#    """test ADBProcess.launch() check *-geckoview-config.yaml"""
