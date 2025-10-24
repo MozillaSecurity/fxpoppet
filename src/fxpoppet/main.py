@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace
-from contextlib import suppress
 from logging import DEBUG, ERROR, INFO, WARNING, basicConfig, getLogger
 from os import getenv
 from pathlib import Path
+from tempfile import mkdtemp
+from time import strftime
 
-from .adb_process import ADBProcess
-from .adb_session import DEVICE_TMP, ADBCommunicationError, ADBSession, ADBSessionError
+from .adb_process import ADBProcess, Reason
+from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
+from .adb_wrapper import ADBWrapper
 
 LOG = getLogger(__name__)
 
@@ -63,6 +65,14 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
         help="Configure console logging (default: %(default)s)",
     )
     parser.add_argument(
+        "-l",
+        "--logs",
+        default=Path.cwd(),
+        type=Path,
+        help="Location to save browser logs. "
+        "A sub-directory containing the browser logs will be created.",
+    )
+    parser.add_argument(
         "--non-root", action="store_true", help="Connect as non-root user"
     )
     parser.add_argument(
@@ -76,7 +86,7 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
     # sanity check args
     args = parser.parse_args(argv)
     if args.serial is None:
-        devices = ADBSession("").devices(any_state=True)
+        devices = ADBWrapper.devices()
         if len(devices) > 1:
             parser.error(
                 "Multiple devices detected. "
@@ -97,75 +107,83 @@ def main(args: Namespace) -> int:
     """Main function"""
     configure_logging(args.log_level)
     LOG.info("Connecting to device '%s'...", args.serial)
-    session = ADBSession(args.serial)
-    with suppress(ADBCommunicationError, ADBSessionError):
-        session.connect(as_root=not args.non_root)
-    if not session.connected:
+    try:
+        session = ADBSession.connect(args.serial, as_root=not args.non_root)
+    except ADBSessionError:
         LOG.error("Failed to connect to '%s'", args.serial)
         return 1
-    try:
-        if args.prep is not None:
-            LOG.info("Preparing device...")
-            args.airplane_mode = 1
-            args.install = args.prep
-            # disable some UI animations
-            session.shell(["settings", "put", "global", "animator_duration_scale", "0"])
-            session.shell(
-                ["settings", "put", "global", "transition_animation_scale", "0"]
-            )
-            session.shell(["settings", "put", "global", "window_animation_scale", "0"])
-            # prevent device from throttling
-            session.shell(["settings", "put", "global", "device_idle_enabled", "0"])
-            session.shell(["settings", "put", "global", "low_power", "0"])
-            session.shell(
-                ["settings", "put", "global", "background_process_limit", "0"]
-            )
-            session.shell(["dumpsys", "deviceidle", "disable"])
-        if args.airplane_mode is not None:
-            LOG.debug("Setting airplane mode (%d)...", args.airplane_mode)
-            session.airplane_mode = args.airplane_mode == 1
-            LOG.info(
-                "Airplane mode %s.", "enabled" if args.airplane_mode else "disabled"
-            )
-        if args.install is not None:
-            pkg_name = ADBSession.get_package_name(args.install)
-            if pkg_name is None:
-                LOG.error("Failed to lookup package name in '%s'", args.install)
-                return 1
-            if session.uninstall(pkg_name):
-                LOG.info("Uninstalled existing '%s'.", pkg_name)
-            LOG.info("Installing '%s' from '%s'...", pkg_name, args.install)
-            package = session.install(args.install)
-            if not package:
-                LOG.error("Could not install '%s'", args.install)
-                return 1
-            llvm_sym = args.install.parent / "llvm-symbolizer"
-            if llvm_sym.is_file():
-                LOG.info("Installing llvm-symbolizer...")
-                session.install_file(llvm_sym, DEVICE_TMP, mode="777")
-            # set wait for debugger
-            # session.shell(["am", "set-debug-app", "-w", "--persistent", package])
-            LOG.info("Installed %s.", package)
-        if args.launch is not None:
-            pkg_name = ADBSession.get_package_name(args.launch)
-            if pkg_name is None:
-                LOG.error("Failed to lookup package name in '%s'", args.install)
-                return 1
-            session.symbols[pkg_name] = args.launch.parent / "symbols"
+    if args.prep is not None:
+        LOG.info("Preparing device...")
+        args.airplane_mode = 1
+        args.install = args.prep
+        # disable some UI animations
+        session.device.shell(
+            ["settings", "put", "global", "animator_duration_scale", "0"]
+        )
+        session.device.shell(
+            ["settings", "put", "global", "transition_animation_scale", "0"]
+        )
+        session.device.shell(
+            ["settings", "put", "global", "window_animation_scale", "0"]
+        )
+        # prevent device from throttling
+        session.device.shell(["settings", "put", "global", "device_idle_enabled", "0"])
+        session.device.shell(["settings", "put", "global", "low_power", "0"])
+        session.device.shell(
+            ["settings", "put", "global", "background_process_limit", "0"]
+        )
+        session.device.shell(["dumpsys", "deviceidle", "disable"])
+    if args.airplane_mode is not None:
+        LOG.debug("Setting airplane mode (%d)...", args.airplane_mode)
+        session.airplane_mode = args.airplane_mode == 1
+        LOG.info("Airplane mode %s.", "enabled" if args.airplane_mode else "disabled")
+    if args.install is not None:
+        pkg_name = ADBSession.get_package_name(args.install)
+        if pkg_name is None:
+            LOG.error("Failed to lookup package name in '%s'", args.install)
+            return 1
+        if session.uninstall(pkg_name):
+            LOG.info("Uninstalled existing '%s'.", pkg_name)
+        LOG.info("Installing '%s' from '%s'...", pkg_name, args.install)
+        package = session.install(args.install)
+        if not package:
+            LOG.error("Could not install '%s'", args.install)
+            return 1
+        llvm_sym = args.install.parent / "llvm-symbolizer"
+        if llvm_sym.is_file():
+            LOG.info("Installing llvm-symbolizer...")
+            session.install_file(llvm_sym, DEVICE_TMP, mode="777")
+        # set wait for debugger
+        # session.device.shell(["am", "set-debug-app", "-w", "--persistent", package])
+        LOG.info("Installed %s.", package)
+    if args.launch is not None:
+        pkg_name = ADBSession.get_package_name(args.launch)
+        if pkg_name is None:
+            LOG.error("Failed to lookup package name in '%s'", args.install)
+            return 1
+        session.symbols[pkg_name] = args.launch.parent / "symbols"
+        proc: ADBProcess | None = None
+        try:
             proc = ADBProcess(pkg_name, session)
-            try:
-                proc.launch("about:blank", launch_timeout=360)
-                assert proc.is_running(), "browser not running?!"
-                LOG.info("Launched.")
-                proc.wait()
-            except KeyboardInterrupt:  # pragma: no cover
-                LOG.info("Aborting...")
-            finally:
+            proc.launch("about:blank", launch_timeout=360)
+            assert proc.is_running(), "browser not running?!"
+            LOG.info("Launched.")
+            proc.wait()
+        except ADBSessionError as exc:
+            LOG.info(str(exc))
+            return 1
+        except KeyboardInterrupt:  # pragma: no cover
+            LOG.info("Aborting...")
+        finally:
+            if proc is not None:
                 proc.close()
-                if args.logs is not None:
-                    proc.save_logs(args.logs)
+                if proc.reason == Reason.ALERT:
+                    logs = Path(
+                        mkdtemp(prefix=strftime("%Y%m%d-%H%M%S_fxp_"), dir=args.logs)
+                    )
+                    proc.save_logs(logs)
+                    if logs.is_dir():
+                        LOG.info("Browser logs available here '%s'", logs.resolve())
                 proc.cleanup()
-                LOG.info("Closed.")
-    finally:
-        session.disconnect()
+            LOG.info("Closed.")
     return 0
