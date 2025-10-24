@@ -780,33 +780,36 @@ def test_adb_session_22(mocker, tmp_path):
     assert ADBSession.get_package_name(fake_apk) == "org.mozilla.fennec_aurora"
 
 
-def test_adb_session_23(mocker):
+@mark.parametrize(
+    "output, result",
+    [
+        (ADBResult(0, "Enforcing"), True),
+        (ADBResult(0, "Blah"), False),
+    ],
+)
+def test_adb_session_23(mocker, output, result):
     """test ADBSession.get_enforce()"""
-    mocker.patch(
-        "fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, "Enforcing")
-    )
-    session = ADBSession("fake-serial")
-    assert session.get_enforce()
-    mocker.patch(
-        "fxpoppet.adb_session.ADBSession.call", return_value=ADBResult(0, "Blah")
-    )
-    session = ADBSession("fake-serial")
-    assert not session.get_enforce()
+    mocker.patch("fxpoppet.adb_session.ADBSession.call", return_value=output)
+    assert ADBSession("fake-serial").get_enforce() == result
 
 
-def test_adb_session_24(mocker):
+@mark.parametrize(
+    "get_enforce, set_enforce",
+    [
+        # disable when enabled
+        (True, 0),
+        # enable when disabled
+        (False, 1),
+    ],
+)
+def test_adb_session_24(mocker, get_enforce, set_enforce):
     """test ADBSession.set_enforce()"""
     # disable when enabled
     fake_call = mocker.patch("fxpoppet.adb_session.ADBSession.call")
-    mocker.patch("fxpoppet.adb_session.ADBSession.get_enforce", return_value=True)
-    session = ADBSession("fake-serial")
-    session.set_enforce(0)
-    assert fake_call.call_count == 1
-    fake_call.reset_mock()
-    # enable when disabled
-    mocker.patch("fxpoppet.adb_session.ADBSession.get_enforce", return_value=False)
-    session = ADBSession("fake-serial")
-    session.set_enforce(1)
+    mocker.patch(
+        "fxpoppet.adb_session.ADBSession.get_enforce", return_value=get_enforce
+    )
+    ADBSession("fake-serial").set_enforce(set_enforce)
     assert fake_call.call_count == 1
 
 

@@ -31,6 +31,28 @@ def test_adb_process_basic(mocker):
         assert not proc.logs
 
 
+@mark.parametrize(
+    "process_exists, result",
+    [
+        # process is running
+        ((True, True), True),
+        # process is not running
+        ((False, False), False),
+    ],
+)
+def test_adb_process_is_running(mocker, process_exists, result):
+    """test ADBProcess.is_running()"""
+    test_pkg = "org.test.preinstalled"
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.process_exists.side_effect = process_exists
+    fake_session.collect_logs.return_value = ""
+    with ADBProcess(test_pkg, fake_session) as proc:
+        proc._pid = 123456
+        proc.reason = None
+        assert proc.is_running() == result
+        assert fake_session.process_exists.call_count == 1
+
+
 def test_adb_process_close(mocker):
     """test ADBProcess.close()"""
     fake_session = mocker.Mock(spec_set=ADBSession)
@@ -137,7 +159,6 @@ def test_adb_process_launch(mocker, env):
     fake_session.collect_logs.return_value = ""
     fake_session.get_pid.side_effect = (None, 1337)
     fake_session.listdir.return_value = ()
-    # fake_session.process_exists.return_value = False
     with ADBProcess("org.mozilla.geckoview_example", fake_session) as proc:
         assert not proc.is_running()
         assert not proc.is_healthy()

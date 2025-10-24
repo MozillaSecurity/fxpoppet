@@ -564,7 +564,7 @@ class ADBSession:
         Returns:
             Directory content listing.
         """
-        result = self.shell(["ls", "-A", str(path)])
+        result = self.shell(("ls", "-A", str(path)), device_required=False)
         if result.exit_code != 0:
             raise FileNotFoundError(f"'{path}' does not exist")
         return [PurePosixPath(x) for x in result.output.splitlines()]
@@ -575,13 +575,12 @@ class ADBSession:
         children: bool = False,
         files: Iterable[PurePosixPath] | None = None,
     ) -> Generator[tuple[int, PurePosixPath]]:
-        """Look up open file on the device.
+        """Look up open files on the device.
 
         Args:
             pid: Only include files where the process with the matching PID has an open
-                 file handle.
+                 file handle. Required when `children` is set to True.
             children: Include file opened by processes with a parent PID matching pid.
-                      pid is required when children is set to True.
             files: Limit results to these specific files.
 
         Yields:
@@ -597,9 +596,9 @@ class ADBSession:
         else:
             assert not children, "children requires pid"
             pids = None
-        if files:
+        if files is not None:
             cmd.extend(str(x) for x in files)
-        for line in self.shell(cmd).output.splitlines():
+        for line in self.shell(cmd, device_required=False).output.splitlines():
             if line.endswith("Permission denied)") or " REG " not in line:
                 # only include regular files for now
                 continue
@@ -637,7 +636,12 @@ class ADBSession:
         # this is called frequently and should be as light weight as possible
         str_pid = str(pid)
         return (
-            str_pid in self.shell(["ps", "-p", str_pid, "-o", "pid"], timeout=30).output
+            str_pid
+            in self.shell(
+                ("ps", "-p", str_pid, "-o", "pid"),
+                device_required=False,
+                timeout=30,
+            ).output
         )
 
     def pull(self, src: PurePosixPath, dst: Path) -> bool:
