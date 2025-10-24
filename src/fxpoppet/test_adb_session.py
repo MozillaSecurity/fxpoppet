@@ -681,17 +681,17 @@ def test_adb_session_19(mocker):
 
 def test_adb_session_20(mocker, tmp_path):
     """test ADBSession._aapt_check()"""
-    (tmp_path / "android-9").mkdir()
-    fake_aapt_sys = tmp_path / "android-9" / "aapt-sys"
+    fake_aapt_sys = tmp_path / "aapt-sys"
     fake_aapt_sys.touch()
-    fake_aapt = tmp_path / "android-9" / "aapt"
-    fake_aapt.touch()
     # use system aapt
     mocker.patch("fxpoppet.adb_session.AAPT_BIN", None)
-    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
+    mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
     mocker.patch("fxpoppet.adb_session.which", return_value=str(fake_aapt_sys))
     assert ADBSession._aapt_check() == str(fake_aapt_sys)
     # use recommended aapt
+    (tmp_path / "android-9").mkdir()
+    fake_aapt = tmp_path / "android-9" / "aapt"
+    fake_aapt.touch()
     mocker.patch("fxpoppet.adb_session.AAPT_BIN", None)
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
     assert ADBSession._aapt_check() == str(fake_aapt)
@@ -730,9 +730,7 @@ def test_adb_session_21(mocker, tmp_path):
 
 def test_adb_session_22(mocker, tmp_path):
     """test ADBSession.get_package_name()"""
-    mocker.patch(
-        "fxpoppet.adb_session.ADBSession._aapt_check", return_value=b"fake_aapt"
-    )
+    mocker.patch("fxpoppet.adb_session.ADBSession._aapt_check", return_value=b"fake")
     mocker.patch("fxpoppet.adb_session.check_output", return_value=b"")
     with raises(FileNotFoundError):
         ADBSession.get_package_name(Path("/fake/path"))

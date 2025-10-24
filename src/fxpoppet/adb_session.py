@@ -119,10 +119,10 @@ class ADBSession:
         # pylint: disable=global-statement
         global AAPT_BIN
         if AAPT_BIN is None:
-            skd_bin = ANDROID_SDK_ROOT / "android-9" / "aapt"
-            if skd_bin.is_file():
-                LOG.debug("using recommended aapt from '%s'", skd_bin)
-                AAPT_BIN = str(skd_bin)
+            aapt_bin = next(ANDROID_SDK_ROOT.glob("android-*/aapt"), None)
+            if aapt_bin:
+                LOG.debug("using recommended aapt from '%s'", aapt_bin)
+                AAPT_BIN = str(aapt_bin)
             else:
                 installed_bin = which("aapt")
                 if installed_bin is None:
