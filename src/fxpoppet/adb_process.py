@@ -168,8 +168,6 @@ class ADBProcess:
             # TODO: this should be temporary until ASAN_OPTIONS=log_file is working
             if self.logs and (self.logs / "log_asan.txt").is_file():
                 self.reason = Reason.ALERT
-        except ADBSessionError:
-            LOG.warning("No device detected while closing process")
         finally:
             if self.reason is None:
                 self.reason = Reason.CLOSED
