@@ -502,7 +502,11 @@ class AndroidEmulator:
                     with suppress(TimeoutExpired):
                         emu.wait(10)
             if self.xvfb is not None:
-                self.xvfb.stop()
+                try:
+                    self.xvfb.stop()
+                except TimeoutExpired:
+                    if self.xvfb.proc:
+                        self.xvfb.proc.kill()
             raise
 
         self.emu = emu
