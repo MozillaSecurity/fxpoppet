@@ -459,7 +459,7 @@ class AndroidEmulator:
 
         if xvfb:
             try:
-                self.xvfb: Xvfb | None = Xvfb(width=1280, height=1024, timeout=60)
+                self.xvfb: Xvfb | None = Xvfb(width=1080, height=1920, timeout=60)
             except NameError:
                 LOG.error("Missing xvfbwrapper")
                 raise
