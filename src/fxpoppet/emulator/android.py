@@ -513,18 +513,18 @@ class AndroidEmulator:
         self.pid = emu.pid
 
     @staticmethod
-    def boot_wait(proc: Popen[bytes], port: int, boot_timeout: int) -> None:
+    def boot_wait(proc: Popen[bytes], port: int, timeout: int) -> None:
         """Wait for Android emulator instance to boot.
 
         Args:
             proc: Emulator process.
             port: ADB control port for emulator to use.
-            boot_timeout: Time to wait for Android to boot in the emulator.
+            timeout: Time to wait for Android to boot in the emulator.
 
         Return:
             None
         """
-        assert boot_timeout > 0
+        assert timeout > 0
         serial = f"emulator-{port:d}"
         cmd = (
             str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
@@ -534,8 +534,9 @@ class AndroidEmulator:
             "getprop",
             "sys.boot_completed",
         )
+        # poll device until booted
         LOG.debug("waiting for '%s' to boot...", serial)
-        deadline = perf_counter() + boot_timeout
+        deadline = perf_counter() + timeout
         while True:
             with suppress(TimeoutExpired):
                 adb_result = run(
