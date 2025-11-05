@@ -263,7 +263,6 @@ class ADBSession:
         self.device.shell(
             ("pm", "grant", pkg_name, "android.permission.WRITE_EXTERNAL_STORAGE")
         )
-        LOG.debug("installed package '%s'", pkg_name)
         return pkg_name
 
     def install_file(
