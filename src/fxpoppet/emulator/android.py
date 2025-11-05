@@ -911,16 +911,20 @@ def main(argv: list[str] | None = None) -> None:
         except KeyboardInterrupt:
             LOG.info("Aborting...")
         finally:
-            LOG.info("Initiating emulator shutdown")
             if emu is not None:
-                if emu.poll() is None:
+                exit_code = emu.poll()
+                if exit_code is None:
+                    LOG.info("Initiating emulator shutdown...")
                     emu.terminate()
+                else:
+                    LOG.info("Emulator terminated (%d)", exit_code)
                 try:
                     # this should never timeout
                     emu.wait(timeout=60)
                 finally:
                     emu.cleanup()
             AndroidEmulator.remove_avd(avd_name)
+            LOG.info("Done.")
 
 
 if __name__ == "__main__":
