@@ -45,7 +45,7 @@ LOG = getLogger(__name__)
 SD_IMG = "sdcard.img"
 SD_IMG_FIRSTBOOT = f"{SD_IMG}.firstboot"
 SYS_IMG = "android-35"
-WORKING_DIR = Path.home() / "fxpoppet-emulator"
+WORKING_DIR = Path(gettempdir()) / "fxpoppet-emulator"
 
 
 class Snapshot(Enum):
@@ -587,7 +587,6 @@ class AndroidEmulator:
         LOG.info("Checking Android SDK for updates...")
 
         PATHS.sdk_root.mkdir(parents=True, exist_ok=True)
-        PATHS.avd_home.mkdir(parents=True, exist_ok=True)
 
         sdk_repo = AndroidSDKRepo(REPO_URL)
         img_repo = AndroidSDKRepo(IMAGES_URL)
@@ -756,7 +755,7 @@ class AndroidEmulator:
 
         # create an avd
         LOG.debug("creating AVD '%s'", avd_name)
-        PATHS.avd_home.mkdir(exist_ok=True)
+        PATHS.avd_home.mkdir(parents=True, exist_ok=True)
         api_gapi = PATHS.sdk_root / "system-images" / SYS_IMG / "default"
         cls.remove_avd(avd_name)
         avd_ini = PATHS.avd_home / f"{avd_name}.ini"
