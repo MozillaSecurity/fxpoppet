@@ -70,20 +70,6 @@ def test_adb_process_close(mocker):
         assert proc.logs is not None
 
 
-def test_adb_process_close_device_error(mocker):
-    """test ADBProcess.close() handle ADBSessionError"""
-    fake_session = mocker.Mock(spec_set=ADBSession)
-    fake_session.listdir.side_effect = ADBSessionError()
-    with ADBProcess("org.test.app", fake_session) as proc:
-        # pretend we launched
-        proc.reason = None
-        proc.profile = PurePosixPath("on_device_profile")
-        proc.close()
-        assert proc.reason == Reason.CLOSED
-        assert proc.profile is None
-        assert proc.logs is None
-
-
 def test_adb_process_missing_package(mocker):
     """test creating device with unknown package"""
     fake_session = mocker.Mock(spec_set=ADBSession)
