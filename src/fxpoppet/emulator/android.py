@@ -478,9 +478,8 @@ class AndroidEmulator:
 
         # a prompt will block the emulator from launching if crash dump files exist
         # currently there does not seem to be away to disable this in automation
-        for entry in Path(gettempdir()).glob("**/android-*/emu-crash-*"):
-            if entry.is_dir():
-                rmtree(entry, ignore_errors=True)
+        for entry in (Path(gettempdir()) / "android-unknown").glob("emu-crash-*"):
+            rmtree(entry, ignore_errors=True)
 
         LOG.debug("launching emulator (port=%d, snapshot=%s)", port, self.snapshot.name)
         emu = Popen(  # pylint: disable=consider-using-with
