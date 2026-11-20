@@ -510,6 +510,11 @@ def test_adb_session_aapt_check(mocker, tmp_path):
     fake_aapt.touch()
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path)
     assert ADBSession._aapt_check() == str(fake_aapt)
+    # prefer newest recommended aapt
+    (tmp_path / "android-37.0").mkdir()
+    newest_aapt = tmp_path / "android-37.0" / "aapt"
+    newest_aapt.touch()
+    assert ADBSession._aapt_check() == str(newest_aapt)
     # aapt not installed
     mocker.patch("fxpoppet.adb_session.ANDROID_SDK_ROOT", tmp_path / "missing")
     mocker.patch("fxpoppet.adb_session.which", return_value=None)
