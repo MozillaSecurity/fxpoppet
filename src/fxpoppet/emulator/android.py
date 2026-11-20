@@ -11,7 +11,7 @@ from contextlib import suppress
 from enum import Enum, auto
 from io import BytesIO
 from logging import DEBUG, INFO, basicConfig, getLogger
-from os import environ, getenv
+from os import environ, getenv, getpid
 from pathlib import Path
 from platform import system
 from shutil import copy, rmtree
@@ -1035,7 +1035,7 @@ def main(argv: list[str] | None = None) -> None:
     if not args.no_launch:
         # Find a free port
         port = AndroidEmulator.search_free_ports()
-        avd_name = f"x86.{port:d}"
+        avd_name = f"x86.{getpid():d}.{port:d}"
         emu: AndroidEmulator | None = None
         try:
             # Create an AVD and boot it once
