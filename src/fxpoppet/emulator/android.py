@@ -740,6 +740,17 @@ class AndroidEmulator:
         """
         self.emu.terminate()
 
+    def kill(self) -> None:
+        """Kill the emulator process.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
+        self.emu.kill()
+
     def poll(self) -> int | None:
         """Poll emulator process for exit status.
 
@@ -1067,8 +1078,14 @@ def main(argv: list[str] | None = None) -> None:
                 else:
                     LOG.info("Emulator terminated (%d)", exit_code)
                 try:
-                    # this should never timeout
                     emu.wait(timeout=60)
+                except TimeoutExpired:
+                    LOG.warning("Emulator did not exit, killing it...")
+                    emu.kill()
+                    try:
+                        emu.wait(timeout=10)
+                    except TimeoutExpired:
+                        LOG.error("Failed to kill emulator (pid: %d)", emu.pid)
                 finally:
                     emu.cleanup()
             AndroidEmulator.remove_avd(avd_name)
