@@ -123,7 +123,6 @@ def test_main_install(mocker, tmp_path, pkg, install, result):
     session_obj = session_cls.connect.return_value
     session_obj.install.return_value = install
     apk = tmp_path / "fake.apk"
-    (tmp_path / "llvm-symbolizer").touch()
     args = mocker.Mock(
         airplane_mode=None,
         launch=None,
@@ -134,7 +133,6 @@ def test_main_install(mocker, tmp_path, pkg, install, result):
     assert main(args) == result
     assert session_cls.connect.call_count == 1
     assert session_obj.install.call_count == (1 if pkg else 0)
-    assert session_obj.install_file.call_count == (0 if result else 1)
 
 
 @mark.parametrize(

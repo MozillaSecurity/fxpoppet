@@ -11,7 +11,7 @@ from tempfile import mkdtemp
 from time import strftime
 
 from .adb_process import ADBProcess, Reason
-from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
+from .adb_session import ADBSession, ADBSessionError
 from .adb_wrapper import ADBWrapper
 
 LOG = getLogger(__name__)
@@ -149,10 +149,6 @@ def main(args: Namespace) -> int:
         if not package:
             LOG.error("Could not install '%s'", args.install)
             return 1
-        llvm_sym = args.install.parent / "llvm-symbolizer"
-        if llvm_sym.is_file():
-            LOG.info("Installing llvm-symbolizer...")
-            session.install_file(llvm_sym, DEVICE_TMP, mode="777")
         # set wait for debugger
         # session.device.shell(["am", "set-debug-app", "-w", "--persistent", package])
         LOG.info("Installed %s.", package)

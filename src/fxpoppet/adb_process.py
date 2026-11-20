@@ -11,14 +11,17 @@ from logging import getLogger
 from os import getenv
 from pathlib import Path, PurePosixPath
 from random import getrandbits
-from shutil import copy, rmtree
-from tempfile import TemporaryDirectory, mkdtemp
+from shutil import copy, copyfileobj, rmtree, which
+from subprocess import CalledProcessError, TimeoutExpired, run
+from sys import executable
+from tempfile import TemporaryDirectory, TemporaryFile, mkdtemp
 from time import sleep, time
 from typing import TYPE_CHECKING
 
 from ffpuppet.bootstrapper import Bootstrapper
 from ffpuppet.exceptions import LaunchError
 from ffpuppet.minidump_parser import MinidumpParser
+from ffpuppet.sanitizer_util import ASAN_SYMBOLIZE
 from yaml import safe_dump
 
 from .adb_session import DEVICE_TMP, ADBSession, ADBSessionError
@@ -27,6 +30,10 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
 
 LOG = getLogger(__name__)
+# ASan frame with an absolute binary path (same shape asan_symbolize matches)
+RE_FRAME = re.compile(
+    r"^\s*#\d+\s+0x[0-9a-f]+\s.*?\((?P<binary>/[^()\s]+)\+0x[0-9a-f]+\)"
+)
 
 __author__ = "Tyson Smith"
 __credits__ = ["Tyson Smith"]
@@ -328,9 +335,8 @@ class ADBProcess:
                 {
                     "abort_on_error": "1",
                     "color": "0",
-                    "external_symbolizer_path": f"'{DEVICE_TMP / 'llvm-symbolizer'}'",
                     # "log_path": "'%s/log_san.txt'" % (self._sanitizer_logs,),
-                    "symbolize": "1",
+                    "symbolize": "0",
                 },
             )
 
@@ -463,6 +469,11 @@ class ADBProcess:
         if device_logs is not None:
             (self.logs / "log_logcat.txt").write_text(device_logs)
             self._split_logcat(self.logs, self._package)
+            if (self.logs / "log_asan.txt").is_file():
+                try:
+                    self._symbolize_asan_log(self.logs / "log_asan.txt")
+                except OSError as exc:
+                    LOG.warning("Failed to symbolize ASan log: %s", exc)
 
         if not crash_reports:
             return
@@ -579,6 +590,66 @@ class ADBProcess:
                     # strip logger info ... "07-27 12:10:15.442  9990  4234 E "
                     line = re.sub(rb".+?\s[ADEIVW]\s+", b"", line)
                     o_fp.write(line.split(b": ", 1)[-1])
+
+    def _symbolize_asan_log(self, log: Path) -> None:
+        """Symbolize an ASan log using binaries pulled from the device.
+
+        Args:
+            log: ASan log to symbolize. The file is replaced with the output.
+
+        Returns:
+            None
+        """
+        binaries = {
+            m.group("binary")
+            for m in map(RE_FRAME.match, log.read_text(errors="replace").splitlines())
+            if m
+        }
+        if not binaries:
+            return
+        if not (
+            getenv("LLVM_SYMBOLIZER_PATH")
+            or getenv("ASAN_SYMBOLIZER_PATH")
+            or which("llvm-symbolizer")
+        ):
+            LOG.warning(
+                "llvm-symbolizer not found, skipping ASan log symbolization "
+                "(set LLVM_SYMBOLIZER_PATH)"
+            )
+            return
+        LOG.info("Symbolizing ASan log...")
+        with TemporaryDirectory(prefix="fxp_sysroot_") as sysroot:
+            # mirror device paths in the sysroot so asan_symbolize can find them
+            pulled = False
+            for binary in binaries:
+                # log content comes from the device, don't allow path traversal
+                if ".." in PurePosixPath(binary).parts:
+                    continue
+                dst = Path(sysroot + binary)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if self._session.pull(PurePosixPath(binary), dst):
+                    pulled = True
+            if not pulled:
+                LOG.warning(
+                    "Failed to pull binaries from device, "
+                    "skipping ASan log symbolization"
+                )
+                return
+            with log.open("rb") as in_fp, TemporaryFile("wb+") as out_fp:
+                try:
+                    run(
+                        (executable, ASAN_SYMBOLIZE, "-d", "-s", sysroot),
+                        stdin=in_fp,
+                        stdout=out_fp,
+                        check=True,
+                        timeout=300,
+                    )
+                except (CalledProcessError, TimeoutExpired) as exc:
+                    LOG.warning("Failed to symbolize '%s': %s", log.name, exc)
+                    return
+                out_fp.seek(0)
+                with log.open("wb") as log_fp:
+                    copyfileobj(out_fp, log_fp)
 
     def save_logs(self, dst: Path) -> None:
         """Save logs to specified location. 'dst' will be created.

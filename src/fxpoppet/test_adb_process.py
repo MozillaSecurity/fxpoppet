@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 from pathlib import Path, PurePosixPath
 from shutil import rmtree
+from subprocess import CalledProcessError
 
 from ffpuppet.exceptions import BrowserTerminatedError
 from pytest import mark, raises
@@ -341,6 +342,38 @@ def test_adb_process_process_logs(mocker, tmp_path):
         assert fake_mdp.return_value.__enter__.return_value.create_log.call_count == 1
 
 
+def test_adb_process_process_logs_symbolize_error(mocker, tmp_path):
+    """test ADBProcess._process_logs() ignores OSError from _symbolize_asan_log()"""
+    mocker.patch("fxpoppet.adb_process.Bootstrapper", autospec=True)
+    log_tmp = tmp_path / "log_tmp"
+    log_tmp.mkdir()
+    mocker.patch(
+        "fxpoppet.adb_process.mkdtemp",
+        autospec=True,
+        return_value=str(log_tmp),
+    )
+
+    def _fake_split(logs, _package):
+        (logs / "log_asan.txt").write_text("asan log")
+
+    mocker.patch(
+        "fxpoppet.adb_process.ADBProcess._split_logcat", side_effect=_fake_split
+    )
+    fake_sym = mocker.patch(
+        "fxpoppet.adb_process.ADBProcess._symbolize_asan_log",
+        side_effect=OSError("fake error"),
+    )
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.collect_logs.return_value = "logcat"
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    with ADBProcess("org.some.app", fake_session) as proc:
+        proc.profile = profile
+        proc._process_logs([])
+        assert fake_sym.call_count == 1
+        assert (proc.logs / "log_logcat.txt").is_file()
+
+
 def test_adb_process_split_logcat(tmp_path):
     """test ADBProcess._split_logcat()"""
     log_path = tmp_path / "logs"
@@ -380,6 +413,92 @@ def test_adb_process_split_logcat(tmp_path):
     assert "test, line2" in stderr_lines
     assert "test, line1" not in stderr_lines
     assert len(stderr_lines) == 8
+
+
+def test_adb_process_symbolize_asan_log(mocker, monkeypatch, tmp_path):
+    """test ADBProcess._symbolize_asan_log()"""
+    # ensure host environment does not affect the test
+    monkeypatch.delenv("LLVM_SYMBOLIZER_PATH", raising=False)
+    monkeypatch.delenv("ASAN_SYMBOLIZER_PATH", raising=False)
+    mocker.patch(
+        "fxpoppet.adb_process.which",
+        autospec=True,
+        return_value="/usr/bin/llvm-symbolizer",
+    )
+    fake_run = mocker.patch("fxpoppet.adb_process.run", autospec=True)
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.pull.return_value = True
+    log = tmp_path / "log_asan.txt"
+    log_data = (
+        "    #0 0x7f0001 in func1 (/data/app/~~X==/pkg-Y==/lib/x86_64/libxul.so+0x1)\n"
+        "    #1 0x7f0002 in func2 (/apex/com.android.art/lib64/libart.so+0x2)\n"
+        "    #2 0x7f0003 in func3 (/data/../../etc/passwd+0x3)\n"
+        "    #3 0x7f0004 in func4 file.cc:10\n"
+    )
+    with ADBProcess("org.some.app", fake_session) as proc:
+        # symbolize succeeds
+        log.write_text(log_data)
+        fake_run.side_effect = lambda *_args, stdout, **_kwargs: stdout.write(
+            b"symbolized\n"
+        )
+        proc._symbolize_asan_log(log)
+        # only the valid absolute paths are pulled
+        assert fake_session.pull.call_count == 2
+        pulled = {call.args[0] for call in fake_session.pull.call_args_list}
+        assert pulled == {
+            PurePosixPath("/data/app/~~X==/pkg-Y==/lib/x86_64/libxul.so"),
+            PurePosixPath("/apex/com.android.art/lib64/libart.so"),
+        }
+        assert fake_run.call_count == 1
+        assert "-s" in fake_run.call_args.args[0]
+        assert log.read_text() == "symbolized\n"
+        # symbolize fails, log is left unchanged
+        fake_session.reset_mock()
+        log.write_text(log_data)
+        fake_run.side_effect = CalledProcessError(1, "asan_symbolize")
+        proc._symbolize_asan_log(log)
+        assert log.read_text() == log_data
+        # no binaries pulled, asan_symbolize is not run and log is left unchanged
+        fake_session.reset_mock()
+        fake_run.reset_mock()
+        fake_session.pull.return_value = False
+        log.write_text(log_data)
+        proc._symbolize_asan_log(log)
+        assert fake_run.call_count == 0
+        assert log.read_text() == log_data
+
+
+@mark.parametrize(
+    "env, found, warn",
+    [
+        # llvm-symbolizer not found
+        ({}, None, True),
+        # found on PATH
+        ({}, "/usr/bin/llvm-symbolizer", False),
+        # set via environment
+        ({"LLVM_SYMBOLIZER_PATH": "/opt/llvm-symbolizer"}, None, False),
+        ({"ASAN_SYMBOLIZER_PATH": "/opt/llvm-symbolizer"}, None, False),
+    ],
+)
+def test_adb_process_symbolize_asan_log_no_symbolizer(
+    mocker, monkeypatch, caplog, tmp_path, env, found, warn
+):
+    """test ADBProcess._symbolize_asan_log() warns when llvm-symbolizer is missing"""
+    monkeypatch.delenv("LLVM_SYMBOLIZER_PATH", raising=False)
+    monkeypatch.delenv("ASAN_SYMBOLIZER_PATH", raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    mocker.patch("fxpoppet.adb_process.which", autospec=True, return_value=found)
+    fake_run = mocker.patch("fxpoppet.adb_process.run", autospec=True)
+    log = tmp_path / "log_asan.txt"
+    log.write_text("    #0 0x7f0001 in func1 (/data/app/libxul.so+0x1)\n")
+    fake_session = mocker.Mock(spec_set=ADBSession)
+    fake_session.pull.return_value = True
+    with ADBProcess("org.some.app", fake_session) as proc:
+        proc._symbolize_asan_log(log)
+    assert ("llvm-symbolizer not found" in caplog.text) == warn
+    # symbolizing is skipped when llvm-symbolizer is missing
+    assert fake_run.call_count == (0 if warn else 1)
 
 
 @mark.parametrize(
