@@ -747,12 +747,20 @@ class AndroidEmulator:
             rmtree(avd_dir)
 
     @classmethod
-    def create_avd(cls, avd_name: str, sdcard_size: int = 500) -> None:
+    def create_avd(
+        cls,
+        avd_name: str,
+        sdcard_size: int = 500,
+        cpu_cores: int = 4,
+        gpu_mode: str = "auto",
+    ) -> None:
         """Create an Android emulator machine definition (AVD).
 
         Args:
             avd_name: Name of AVD to create.
             sdcard_size: Size of SD card image to use, in megabytes.
+            cpu_cores: Number of virtual CPU cores.
+            gpu_mode: Emulator GPU mode (hw.gpu.mode).
 
         Returns:
             None
@@ -793,14 +801,14 @@ class AndroidEmulator:
             print("hw.camera.back=emulated", file=cfg)
             print("hw.camera.front=emulated", file=cfg)
             print("hw.cpu.arch=x86_64", file=cfg)
-            print("hw.cpu.ncore=4", file=cfg)
+            print(f"hw.cpu.ncore={cpu_cores:d}", file=cfg)
             print("hw.dPad=no", file=cfg)
             print("hw.device.hash2=MD5:524882cfa9f421413193056700a29392", file=cfg)
             print("hw.device.manufacturer=Google", file=cfg)
             print("hw.device.name=pixel", file=cfg)
             print("hw.gps=no", file=cfg)
             print("hw.gpu.enabled=yes", file=cfg)
-            print("hw.gpu.mode=auto", file=cfg)
+            print(f"hw.gpu.mode={gpu_mode}", file=cfg)
             print("hw.gyroscope=no", file=cfg)
             print("hw.initialOrientation=Portrait", file=cfg)
             print("hw.keyboard=yes", file=cfg)
@@ -867,6 +875,18 @@ def main(argv: list[str] | None = None) -> None:
             "(default: %(default)ss)"
         ),
     )
+    aparser.add_argument(
+        "--cores",
+        default=4,
+        type=int,
+        help="Number of virtual CPU cores (default: %(default)s)",
+    )
+    aparser.add_argument(
+        "--gpu",
+        choices=("auto", "host", "lavapipe", "swiftshader_indirect", "guest"),
+        default="auto",
+        help="Emulator GPU mode (default: %(default)s)",
+    )
     disp_group = aparser.add_mutually_exclusive_group()
     disp_group.add_argument(
         "--headless", action="store_true", help="Run emulator in headless mode"
@@ -893,6 +913,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.boot_timeout < 0:
         aparser.error("--boot-timeout must be positive")
+    if args.cores < 1:
+        aparser.error("--cores must be at least 1")
 
     init_logging(debug=args.verbose)
 
@@ -910,7 +932,9 @@ def main(argv: list[str] | None = None) -> None:
         emu: AndroidEmulator | None = None
         try:
             # Create an AVD and boot it once
-            AndroidEmulator.create_avd(avd_name)
+            AndroidEmulator.create_avd(
+                avd_name, cpu_cores=args.cores, gpu_mode=args.gpu
+            )
             LOG.info("Launching Android emulator...")
             # Boot the AVD
             emu = AndroidEmulator(
