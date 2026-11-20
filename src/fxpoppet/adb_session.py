@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path, PurePosixPath
+from re import findall
 from shutil import which
 from subprocess import check_output
 from tempfile import TemporaryDirectory
@@ -68,7 +69,12 @@ class ADBSession:
         Returns:
             AAPT binary.
         """
-        aapt_bin = next(ANDROID_SDK_ROOT.glob("android-*/aapt"), None)
+        # prefer the newest build-tools (e.g. 'android-37.0' over 'android-9')
+        aapt_bin = max(
+            ANDROID_SDK_ROOT.glob("android-*/aapt"),
+            key=lambda x: tuple(int(v) for v in findall(r"\d+", x.parent.name)),
+            default=None,
+        )
         if aapt_bin:
             LOG.debug("using recommended aapt from '%s'", aapt_bin)
             return str(aapt_bin)
