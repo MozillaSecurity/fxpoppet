@@ -373,7 +373,9 @@ class AndroidEmulator:
 
     __slots__ = (
         "avd_name",
+        "boot_timeout",
         "emu",
+        "emulator_output",
         "env",
         "headless",
         "pid",
@@ -419,6 +421,8 @@ class AndroidEmulator:
         self.headless = headless
         self.target = target
         self.verbose = verbose
+        self.boot_timeout = boot_timeout
+        self.emulator_output = emulator_output
 
         assert not headless or not xvfb, "Xvfb and headless are mutually exclusive"
 
@@ -572,6 +576,8 @@ class AndroidEmulator:
             xvfb=self.xvfb is not None,
             target=self.target,
             verbose=self.verbose,
+            boot_timeout=self.boot_timeout,
+            emulator_output=self.emulator_output,
         )
 
     @staticmethod
@@ -766,7 +772,7 @@ class AndroidEmulator:
             print("avd.ini.encoding=UTF-8", file=ini)
             print(f"path={avd_dir}", file=ini)
             print(f"path.rel=avd/{avd_name}.avd", file=ini)
-            print("target={SYS_IMG}", file=ini)
+            print(f"target={SYS_IMG}", file=ini)
 
         avd_cfg = avd_dir / "config.ini"
         assert not avd_cfg.is_file(), f"File exists '{avd_cfg}'"
