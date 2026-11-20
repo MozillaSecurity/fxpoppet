@@ -9,6 +9,7 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from contextlib import suppress
 from enum import Enum, auto
+from io import BytesIO
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ, getenv
 from pathlib import Path
@@ -23,6 +24,7 @@ from xml.etree.ElementTree import (
     Element,
     SubElement,
     fromstring,
+    iterparse,
     parse,
     register_namespace,
     tostring,
@@ -42,6 +44,13 @@ EXE_SUFFIX = ".exe" if system() == "Windows" else ""
 REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
 IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
 LOG = getLogger(__name__)
+# default namespaces used when writing package.xml (overridden by those in manifest)
+MANIFEST_NS = {
+    "common": "http://schemas.android.com/repository/android/common/02",
+    "generic": "http://schemas.android.com/repository/android/generic/02",
+    "sys-img": "http://schemas.android.com/sdk/android/repo/sys-img2/03",
+    "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+}
 SD_IMG = "sdcard.img"
 SD_IMG_FIRSTBOOT = f"{SD_IMG}.firstboot"
 SYS_IMG = "android-35"
@@ -200,6 +209,11 @@ class AndroidSDKRepo:
         xml_string = get_url(url).content
         LOG.info("Downloaded manifest: %s (%sB)", url, iec(len(xml_string)))
         self.root = fromstring(xml_string)
+        # namespace prefixes declared by the manifest, used when writing package.xml
+        self.namespaces = dict(MANIFEST_NS)
+        for _, ns in iterparse(BytesIO(xml_string), events=("start-ns",)):
+            if isinstance(ns, tuple):
+                self.namespaces[ns[0]] = ns[1]
         if system() == "Linux":
             self.host = "linux"
         elif system() == "Windows":
@@ -298,19 +312,9 @@ class AndroidSDKRepo:
             extract_zip(zip_tmp, str(out_path))
 
         # write manifest
-        register_namespace(
-            "common", "http://schemas.android.com/repository/android/common/01"
-        )
-        register_namespace(
-            "generic", "http://schemas.android.com/repository/android/generic/01"
-        )
-        register_namespace(
-            "sys-img", "http://schemas.android.com/sdk/android/repo/sys-img2/01"
-        )
-        register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
-        manifest = Element(
-            "{http://schemas.android.com/repository/android/common/01}repository"
-        )
+        for prefix, uri in self.namespaces.items():
+            register_namespace(prefix, uri)
+        manifest = Element(f"{{{self.namespaces['common']}}}repository")
         license_ = package.find("uses-license")
         assert license_ is not None
         element = self.root.find(f"./license[@id='{license_.get('ref')}']")
@@ -333,22 +337,16 @@ class AndroidSDKRepo:
             + tostring(manifest, encoding="UTF-8")
         )
         # etree doesn't support xmlns in attribute values, so insert them manually
-        if b"xmlns:generic=" not in manifest_bytes and b'"generic:' in manifest_bytes:
-            manifest_bytes = manifest_bytes.replace(
-                b"<common:repository ",
-                (
-                    b"<common:repository xmlns:generic="
-                    b'"http://schemas.android.com/repository/android/generic/01" '
-                ),
-            )
-        if b"xmlns:sys-img=" not in manifest_bytes and b'"sys-img:' in manifest_bytes:
-            manifest_bytes = manifest_bytes.replace(
-                b"<common:repository ",
-                (
-                    b"<common:repository xmlns:sys-img="
-                    b'"http://schemas.android.com/sdk/android/repo/sys-img2/01" '
-                ),
-            )
+        for prefix, uri in self.namespaces.items():
+            if (
+                f"xmlns:{prefix}=".encode() not in manifest_bytes
+                and f'"{prefix}:'.encode() in manifest_bytes
+            ):
+                manifest_bytes = manifest_bytes.replace(
+                    b"<common:repository ",
+                    f'<common:repository xmlns:{prefix}="{uri}" '.encode(),
+                    1,
+                )
         manifest_path.write_bytes(manifest_bytes)
 
 
