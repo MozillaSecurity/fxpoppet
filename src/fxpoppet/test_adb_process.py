@@ -415,6 +415,51 @@ def test_adb_process_split_logcat(tmp_path):
     assert len(stderr_lines) == 8
 
 
+def test_adb_process_split_logcat_single_letter_words(tmp_path):
+    """test ADBProcess._split_logcat() with standalone A/D/E/I/V/W in messages"""
+    log_path = tmp_path / "logs"
+    log_path.mkdir()
+    (log_path / "log_logcat.txt").write_text(
+        "07-27 12:10:15.442  90  44 E GeckoConsole: I think A value W is lost\n"
+        "07-27 12:10:15.443  90  44 D GeckoConsole: E V I D A W\n"
+        "07-27 12:10:15.505  90  43 I GeckoDump: A, D, E, I, V, W\n"
+        "07-27 12:39:27.442  90  90 F MOZ_Assert:"
+        " Assertion failure: false (Type A mismatch), at foo.cpp:12\n"
+        "07-27 12:39:27.444  90  90 F GeckoConsole: value is A\n"
+    )
+    ADBProcess._split_logcat(log_path, "fake.package")
+    stderr_lines = (log_path / "log_stderr.txt").read_text().splitlines()
+    assert stderr_lines == [
+        "I think A value W is lost",
+        "E V I D A W",
+        "Assertion failure: false (Type A mismatch), at foo.cpp:12",
+        "value is A",
+    ]
+    assert (log_path / "log_stdout.txt").read_text() == "A, D, E, I, V, W\n"
+
+
+def test_adb_process_split_logcat_asan(tmp_path):
+    """test ADBProcess._split_logcat() ASan log extraction"""
+    log_path = tmp_path / "logs"
+    log_path.mkdir()
+    (log_path / "log_logcat.txt").write_text(
+        # noise from the ASan thread before the crash is skipped
+        "07-27 12:10:15.100  90  92 E GeckoConsole: noise A before crash\n"
+        "07-27 12:10:16.000  90  92 E GeckoConsole:"
+        " AddressSanitizer: heap-buffer-overflow\n"
+        "07-27 12:10:16.001  90  92 E GeckoConsole: I think A value W is lost\n"
+        # different thread, should not be included in log_asan.txt
+        "07-27 12:10:16.002  90  93 E GeckoConsole: other thread A\n"
+        "07-27 12:10:16.003  90  92 E GeckoConsole: #0 0x1234 in D foo\n"
+    )
+    ADBProcess._split_logcat(log_path, "fake.package")
+    assert (log_path / "log_asan.txt").read_text() == (
+        "AddressSanitizer: heap-buffer-overflow\n"
+        "I think A value W is lost\n"
+        "#0 0x1234 in D foo\n"
+    )
+
+
 def test_adb_process_symbolize_asan_log(mocker, monkeypatch, tmp_path):
     """test ADBProcess._symbolize_asan_log()"""
     # ensure host environment does not affect the test

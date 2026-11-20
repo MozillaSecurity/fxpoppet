@@ -532,6 +532,7 @@ class ADBProcess:
         asan_tid = None
         filter_pids = set()
         re_id = re.compile(rb"^\d+-\d+\s+(\d+[:.]){3}\d+\s+(?P<pid>\d+)\s+(?P<tid>\d+)")
+        re_prefix = re.compile(rb"^\d+-\d+\s+[\d:.]+\s+\d+\s+\d+\s+[A-Z]\s+")
         with logcat.open("rb") as lc_fp:
             for line in lc_fp:
                 if all(x not in line for x in tokens):
@@ -560,7 +561,7 @@ class ADBProcess:
                 if not any(pid == line_pid for pid in filter_pids):
                     continue
                 # strip logger info ... "07-27 12:10:15.442  9990  4234 E "
-                line = re.sub(rb".+?\s[ADEIVW]\s+", b"", line)
+                line = re_prefix.sub(b"", line)
                 if line.startswith(b"GeckoDump"):
                     o_fp.write(line.split(b": ", 1)[-1])
                 else:
@@ -588,7 +589,7 @@ class ADBProcess:
                             continue
                         found_log = True
                     # strip logger info ... "07-27 12:10:15.442  9990  4234 E "
-                    line = re.sub(rb".+?\s[ADEIVW]\s+", b"", line)
+                    line = re_prefix.sub(b"", line)
                     o_fp.write(line.split(b": ", 1)[-1])
 
     def _symbolize_asan_log(self, log: Path) -> None:
