@@ -39,10 +39,10 @@ if system() == "Linux":
 __author__ = "Jesse Schwartzentruber"
 
 # https://developer.android.com/tools/releases/build-tools
-BUILD_TOOLS = "28.0.3"
+BUILD_TOOLS = "37.0.0"
 EXE_SUFFIX = ".exe" if system() == "Windows" else ""
-REPO_URL = "https://dl.google.com/android/repository/repository2-1.xml"
-IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml"
+REPO_URL = "https://dl.google.com/android/repository/repository2-3.xml"
+IMAGES_URL = "https://dl.google.com/android/repository/sys-img/android/sys-img2-3.xml"
 LOG = getLogger(__name__)
 # default namespaces used when writing package.xml (overridden by those in manifest)
 MANIFEST_NS = {
@@ -53,7 +53,7 @@ MANIFEST_NS = {
 }
 SD_IMG = "sdcard.img"
 SD_IMG_FIRSTBOOT = f"{SD_IMG}.firstboot"
-SYS_IMG = "android-35"
+SYS_IMG = "android-37.0"
 WORKING_DIR = Path(gettempdir()) / "fxpoppet-emulator"
 
 
@@ -835,8 +835,8 @@ class AndroidEmulator:
             print("skin.name=1080x1920", file=cfg)
             print("skin.path=_no_skin", file=cfg)
             print("skin.path.backup=_no_skin", file=cfg)
-            print("tag.display=Google APIs", file=cfg)
-            print("tag.id=google_apis", file=cfg)
+            print("tag.display=Default Android System Image", file=cfg)
+            print("tag.id=default", file=cfg)
             print("vm.heapSize=256", file=cfg)
 
         if (api_gapi / "x86_64" / "userdata.img").exists():
