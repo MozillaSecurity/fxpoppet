@@ -427,6 +427,8 @@ class AndroidEmulator:
         args.append("-no-boot-anim")
         args.append("-no-metrics")
         args.extend(("-selinux", "permissive"))
+        # suppress warning dialog when running under nested virtualization
+        args.append("-no-nested-warnings")
 
         if self.headless:
             args.append("-no-window")
