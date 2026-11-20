@@ -558,6 +558,102 @@ class AndroidEmulator:
                 raise AndroidEmulatorError("Emulator failed to boot in time.")
             sleep(1)
 
+    def _shell(self, command: str, timeout: int = 30) -> str | None:
+        """Run a shell command on the emulator.
+
+        Args:
+            command: Command to run.
+            timeout: Time to wait for the command to complete.
+
+        Returns:
+            Output of the command or None if it failed.
+        """
+        cmd = (
+            str(PATHS.sdk_root / "platform-tools" / f"adb{EXE_SUFFIX}"),
+            "-s",
+            f"emulator-{self.port:d}",
+            "shell",
+            command,
+        )
+        with suppress(TimeoutExpired):
+            result = run(cmd, capture_output=True, check=False, timeout=timeout)
+            if result.returncode == 0:
+                return result.stdout.decode("utf-8", errors="replace")
+        return None
+
+    def system_version(self) -> str | None:
+        """Look up the Android system version running on the emulator.
+
+        Args:
+            None
+
+        Returns:
+            Description of the Android version or None if it could not be found.
+        """
+        output = self._shell(
+            "getprop ro.build.version.release;"
+            " getprop ro.build.version.sdk;"
+            " getprop ro.build.id"
+        )
+        values = output.split() if output else []
+        if len(values) == 3:
+            release, sdk, build_id = values
+            return f"Android {release} (API {sdk}, build {build_id})"
+        return None
+
+    def cpu_count(self) -> int | None:
+        """Look up the number of CPU cores available on the emulator.
+
+        Args:
+            None
+
+        Returns:
+            Number of CPU cores or None if it could not be found.
+        """
+        output = self._shell("nproc")
+        if output and output.strip().isdigit():
+            return int(output.strip())
+        return None
+
+    def memory_usage(self) -> tuple[int, int] | None:
+        """Look up memory usage on the emulator.
+
+        Args:
+            None
+
+        Returns:
+            Used and total memory in bytes or None if it could not be found.
+        """
+        output = self._shell("cat /proc/meminfo")
+        if not output:
+            return None
+        meminfo: dict[str, int] = {}
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                meminfo[parts[0].rstrip(":")] = int(parts[1]) * 1024
+        if "MemTotal" not in meminfo or "MemAvailable" not in meminfo:
+            return None
+        total = meminfo["MemTotal"]
+        return (total - meminfo["MemAvailable"], total)
+
+    def disk_usage(self, path: str = "/data") -> tuple[int, int] | None:
+        """Look up disk usage of a partition on the emulator.
+
+        Args:
+            path: Mount point to check.
+
+        Returns:
+            Used and total disk space in bytes or None if it could not be found.
+        """
+        output = self._shell(f"df -k {path}")
+        lines = output.splitlines() if output else []
+        # skip header on the first line
+        fields = lines[1].split() if len(lines) > 1 else []
+        if len(fields) >= 3 and fields[1].isdigit() and fields[2].isdigit():
+            return (int(fields[2]) * 1024, int(fields[1]) * 1024)
+        return None
+
     def relaunch(self) -> AndroidEmulator:
         """Create a new AndroidEmulator object created with the same parameters used to
         create this one.
@@ -947,6 +1043,18 @@ def main(argv: list[str] | None = None) -> None:
                 emulator_output=args.emulator_output,
             )
             LOG.info("Android emulator is running as 'emulator-%d'", port)
+            version = emu.system_version()
+            if version is not None:
+                LOG.info("System version: %s", version)
+            cores = emu.cpu_count()
+            if cores is not None:
+                LOG.info("CPU cores: %d", cores)
+            memory = emu.memory_usage()
+            if memory is not None:
+                LOG.info("Memory: %sB used of %sB", iec(memory[0]), iec(memory[1]))
+            disk = emu.disk_usage()
+            if disk is not None:
+                LOG.info("Disk (/data): %sB used of %sB", iec(disk[0]), iec(disk[1]))
             emu.wait()
         except KeyboardInterrupt:
             LOG.info("Aborting...")
