@@ -26,6 +26,7 @@ def test_emulator_main_shutdown(mocker, wait_effect, kills):
     """test emulator main() shutdown handling"""
     emu_cls = mocker.patch("fxpoppet.emulator.android.AndroidEmulator", autospec=True)
     emu_cls.search_free_ports.return_value = 5554
+    mocker.patch("fxpoppet.emulator.android.getpid", return_value=4321)
     emu = emu_cls.return_value
     emu.pid = 1234
     emu.system_version.return_value = None
@@ -40,4 +41,5 @@ def test_emulator_main_shutdown(mocker, wait_effect, kills):
     assert emu.wait.call_count == len(wait_effect)
     # the AVD is only removed once the emulator has been stopped
     assert emu.cleanup.call_count == 1
-    emu_cls.remove_avd.assert_called_once_with("x86.5554")
+    assert emu_cls.create_avd.call_args[0][0] == "x86.4321.5554"
+    emu_cls.remove_avd.assert_called_once_with("x86.4321.5554")
