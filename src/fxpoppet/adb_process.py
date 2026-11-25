@@ -336,6 +336,9 @@ class ADBProcess:
                     "abort_on_error": "1",
                     "color": "0",
                     # "log_path": "'%s/log_san.txt'" % (self._sanitizer_logs,),
+                    # Android's libsfplugin_ccodec.so (Codec2) frees C2Params
+                    # with a mismatched sized delete
+                    "new_delete_type_mismatch": "0",
                     "symbolize": "0",
                 },
             )
